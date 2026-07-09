@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import {
   normalizeHttpUrl,
   readCustomMatchEntriesFromStorage,
@@ -68,7 +68,11 @@ export default function AdminPage() {
   const [editingTeamTier, setEditingTeamTier] = useState<"1" | "2" | "3">("3");
   const [editingTeamTierRank, setEditingTeamTierRank] = useState("");
   const [message, setMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  // per-item loading: ID-k halmaza – csak az érintett gomb töltőre áll
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+  const [isKeyVerifying, setIsKeyVerifying] = useState(false);
+  // ref: szinkron ellenőrzés re-render nélkül
+  const isVerifiedRef = useRef(false);
   const [isModeratorVerified, setIsModeratorVerified] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [newModeratorPassword, setNewModeratorPassword] = useState("");
@@ -76,6 +80,10 @@ export default function AdminPage() {
   const [configMessage, setConfigMessage] = useState("");
   const [currentModeratorPassword, setCurrentModeratorPassword] = useState("");
   const [currentAdminKey, setCurrentAdminKey] = useState("");
+
+  const startLoading = (id: string) => setLoadingIds((prev) => new Set(prev).add(id));
+  const stopLoading = (id: string) => setLoadingIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+  const isItemLoading = (id: string) => loadingIds.has(id);
 
   const loadSiteUsers = async (light = false) => {
     const users = await fetchSiteUsers({ light });
@@ -158,11 +166,13 @@ export default function AdminPage() {
   const verifyModeratorKey = async (key: string): Promise<string | null> => {
     const normalizedAdminKey = key.trim();
     if (!normalizedAdminKey) {
+      isVerifiedRef.current = false;
       setIsModeratorVerified(false);
       return "Add meg a moderátor jelszót (kulcsot).";
     }
 
-    if (isModeratorVerified) {
+    // Szinkron gyors ellenőrzés ref-ből – nem kell API hívás
+    if (isVerifiedRef.current) {
       return null;
     }
 
@@ -172,18 +182,13 @@ export default function AdminPage() {
     try {
       response = await fetch("/api/moderator/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: "admin",
-          password: normalizedAdminKey,
-          mode: "adminKey",
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "admin", password: normalizedAdminKey, mode: "adminKey" }),
         signal: controller.signal,
       });
     } catch (error) {
       clearTimeout(timeoutId);
+      isVerifiedRef.current = false;
       setIsModeratorVerified(false);
       if (error instanceof DOMException && error.name === "AbortError") {
         return "Időtúllépés a moderátor ellenőrzésnél. Próbáld újra.";
@@ -194,18 +199,20 @@ export default function AdminPage() {
 
     const payload = (await response.json()) as { ok?: boolean; message?: string };
     if (!response.ok || !payload.ok) {
+      isVerifiedRef.current = false;
       setIsModeratorVerified(false);
       return payload.message ?? "Hibás kulcs.";
     }
 
     window.localStorage.setItem("admin-key", normalizedAdminKey);
+    isVerifiedRef.current = true;
     setIsModeratorVerified(true);
     return null;
   };
 
   const verifyModeratorKeyManually = async () => {
     setMessage("");
-    setIsLoading(true);
+    setIsKeyVerifying(true);
     try {
       const keyError = await verifyModeratorKey(adminKey);
       if (keyError) {
@@ -214,7 +221,7 @@ export default function AdminPage() {
       }
       setMessage("Moderátor kulcs ellenőrizve.");
     } finally {
-      setIsLoading(false);
+      setIsKeyVerifying(false);
     }
   };
 
@@ -232,48 +239,38 @@ export default function AdminPage() {
       return;
     }
 
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading("add-match");
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-
-      const existing = readCustomMatchEntriesFromStorage();
-      const duplicate = existing.find((item) => item.imageDataUrl === matchImageDataUrl);
-      if (duplicate) {
-        setCustomMatches(existing);
-        setMessage("Ez a kép már hozzá lett adva.");
-        return;
-      }
-
-      const nextEntry: CustomMatchEntry = {
-        id: `custom_match_${Date.now()}`,
-        imageDataUrl: matchImageDataUrl,
-        url: normalizedSourceUrl,
-        result: matchResult.trim() || undefined,
-        team1Name: matchTeam1Name.trim() || undefined,
-        team2Name: matchTeam2Name.trim() || undefined,
-        createdAt: new Date().toISOString(),
-      };
-
-      const nextEntries = [nextEntry, ...existing];
-      writeCustomMatchEntriesToStorage(nextEntries);
-      setCustomMatches(nextEntries);
-      setMatchImageDataUrl("");
-      setMatchImageName("");
-      setMatchSourceUrl("");
-      setMatchResult("");
-      setMatchTeam1Name("");
-      setMatchTeam2Name("");
-      setMessage("Új match hozzáadva.");
-      publishModeratorAction("új meccset adott hozzá.");
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading("add-match");
+      if (keyError) { setMessage(keyError); return; }
     }
+
+    const existing = readCustomMatchEntriesFromStorage();
+    const duplicate = existing.find((item) => item.imageDataUrl === matchImageDataUrl);
+    if (duplicate) { setCustomMatches(existing); setMessage("Ez a kép már hozzá lett adva."); return; }
+
+    const nextEntry: CustomMatchEntry = {
+      id: `custom_match_${Date.now()}`,
+      imageDataUrl: matchImageDataUrl,
+      url: normalizedSourceUrl,
+      result: matchResult.trim() || undefined,
+      team1Name: matchTeam1Name.trim() || undefined,
+      team2Name: matchTeam2Name.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    };
+
+    const nextEntries = [nextEntry, ...existing];
+    writeCustomMatchEntriesToStorage(nextEntries);
+    setCustomMatches(nextEntries);
+    setMatchImageDataUrl("");
+    setMatchImageName("");
+    setMatchSourceUrl("");
+    setMatchResult("");
+    setMatchTeam1Name("");
+    setMatchTeam2Name("");
+    setMessage("Új match hozzáadva.");
+    publishModeratorAction("új meccset adott hozzá.");
   };
 
   const handleMatchImageSelect = (event: ChangeEvent<HTMLInputElement>) => {
@@ -308,25 +305,18 @@ export default function AdminPage() {
 
   const removeMatch = async (matchId: string) => {
     setMessage("");
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading(`del-match-${matchId}`);
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-
-      const existing = readCustomMatchEntriesFromStorage();
-      const nextEntries = existing.filter((item) => item.id !== matchId);
-      writeCustomMatchEntriesToStorage(nextEntries);
-      setCustomMatches(nextEntries);
-      setMessage("Match törölve.");
-      publishModeratorAction("törölt egy meccset.");
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading(`del-match-${matchId}`);
+      if (keyError) { setMessage(keyError); return; }
     }
+    const existing = readCustomMatchEntriesFromStorage();
+    const nextEntries = existing.filter((item) => item.id !== matchId);
+    writeCustomMatchEntriesToStorage(nextEntries);
+    setCustomMatches(nextEntries);
+    setMessage("Match törölve.");
+    publishModeratorAction("törölt egy meccset.");
   };
 
   const startEditMatch = (item: CustomMatchEntry) => {
@@ -346,9 +336,7 @@ export default function AdminPage() {
   };
 
   const saveMatchEdit = async () => {
-    if (!editingMatchId) {
-      return;
-    }
+    if (!editingMatchId) return;
     setMessage("");
     const normalizedSourceUrl = editingMatchUrl.trim()
       ? (normalizeHttpUrl(editingMatchUrl) ?? undefined)
@@ -357,127 +345,95 @@ export default function AdminPage() {
       setMessage("Érvénytelen forrás link.");
       return;
     }
-
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading("save-match");
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-
-      const existing = readCustomMatchEntriesFromStorage();
-      const nextEntries = existing.map((item) =>
-        item.id === editingMatchId
-          ? {
-              ...item,
-              team1Name: editingMatchTeam1.trim() || undefined,
-              team2Name: editingMatchTeam2.trim() || undefined,
-              result: editingMatchResult.trim() || undefined,
-              url: normalizedSourceUrl,
-            }
-          : item
-      );
-      writeCustomMatchEntriesToStorage(nextEntries);
-      setCustomMatches(nextEntries);
-      cancelEditMatch();
-      setMessage("Match szerkesztve.");
-      publishModeratorAction(
-        `szerkesztett egy meccset (${editingMatchTeam1.trim() || "IMPORTÁLT"} vs ${editingMatchTeam2.trim() || "Ellenfél"}).`
-      );
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading("save-match");
+      if (keyError) { setMessage(keyError); return; }
     }
+    const existing = readCustomMatchEntriesFromStorage();
+    const nextEntries = existing.map((item) =>
+      item.id === editingMatchId
+        ? {
+            ...item,
+            team1Name: editingMatchTeam1.trim() || undefined,
+            team2Name: editingMatchTeam2.trim() || undefined,
+            result: editingMatchResult.trim() || undefined,
+            url: normalizedSourceUrl,
+          }
+        : item
+    );
+    writeCustomMatchEntriesToStorage(nextEntries);
+    setCustomMatches(nextEntries);
+    cancelEditMatch();
+    setMessage("Match szerkesztve.");
+    publishModeratorAction(
+      `szerkesztett egy meccset (${editingMatchTeam1.trim() || "IMPORTÁLT"} vs ${editingMatchTeam2.trim() || "Ellenfél"}).`
+    );
   };
 
   const addBracket = async () => {
     setMessage("");
     const normalized = normalizeBracketInput(bracketUrl, bracketName);
-    if (!normalized) {
-      setMessage("Érvénytelen bracket link.");
-      return;
-    }
+    if (!normalized) { setMessage("Érvénytelen bracket link."); return; }
 
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading("add-bracket");
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-
-      const existing = readCustomBracketsFromStorage();
-      const duplicate = existing.find((item) => item.url.toLowerCase() === normalized.url.toLowerCase());
-      if (duplicate) {
-        setCustomBrackets(existing);
-        setMessage("Ez a bracket már hozzá lett adva.");
-        return;
-      }
-
-      const nextEntry: CustomBracketEntry = {
-        id: `custom_bracket_${Date.now()}`,
-        name: normalized.name,
-        url: normalized.url,
-        embedUrl: normalized.embedUrl,
-        createdAt: new Date().toISOString(),
-      };
-      const nextEntries = [nextEntry, ...existing];
-      writeCustomBracketsToStorage(nextEntries);
-      setCustomBrackets(nextEntries);
-      setBracketUrl("");
-      setBracketName("");
-      setMessage("Új bracket hozzáadva.");
-      publishModeratorAction(`új bracketet adott hozzá (${normalized.name}).`);
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading("add-bracket");
+      if (keyError) { setMessage(keyError); return; }
     }
+
+    const existing = readCustomBracketsFromStorage();
+    const duplicate = existing.find((item) => item.url.toLowerCase() === normalized.url.toLowerCase());
+    if (duplicate) { setCustomBrackets(existing); setMessage("Ez a bracket már hozzá lett adva."); return; }
+
+    const nextEntry: CustomBracketEntry = {
+      id: `custom_bracket_${Date.now()}`,
+      name: normalized.name,
+      url: normalized.url,
+      embedUrl: normalized.embedUrl,
+      createdAt: new Date().toISOString(),
+    };
+    const nextEntries = [nextEntry, ...existing];
+    writeCustomBracketsToStorage(nextEntries);
+    setCustomBrackets(nextEntries);
+    setBracketUrl("");
+    setBracketName("");
+    setMessage("Új bracket hozzáadva.");
+    publishModeratorAction(`új bracketet adott hozzá (${normalized.name}).`);
   };
 
   const removeBracket = async (bracketId: string) => {
     setMessage("");
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading(`del-bracket-${bracketId}`);
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-
-      const existing = readCustomBracketsFromStorage();
-      const nextEntries = existing.filter((item) => item.id !== bracketId);
-      writeCustomBracketsToStorage(nextEntries);
-      setCustomBrackets(nextEntries);
-      setMessage("Bracket törölve.");
-      publishModeratorAction("törölt egy bracketet.");
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading(`del-bracket-${bracketId}`);
+      if (keyError) { setMessage(keyError); return; }
     }
+    const existing = readCustomBracketsFromStorage();
+    const nextEntries = existing.filter((item) => item.id !== bracketId);
+    writeCustomBracketsToStorage(nextEntries);
+    setCustomBrackets(nextEntries);
+    setMessage("Bracket törölve.");
+    publishModeratorAction("törölt egy bracketet.");
   };
 
   const removeSiteUser = async (userId: string) => {
     setMessage("");
-    setIsLoading(true);
+    startLoading(`del-user-${userId}`);
     try {
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-
+      if (keyError) { setMessage(keyError); return; }
       await deleteSiteUser(userId, getModeratorName());
-      await loadSiteUsers();
+      setSiteUsers((prev) => prev.filter((u) => u.id !== userId));
       window.dispatchEvent(new Event("site-users-changed"));
       setMessage("Felhasználó törölve.");
     } catch {
       setMessage("Hálózati hiba történt.");
     } finally {
-      setIsLoading(false);
+      stopLoading(`del-user-${userId}`);
     }
   };
 
@@ -492,103 +448,77 @@ export default function AdminPage() {
   };
 
   const saveUserElo = async () => {
-    if (!editingUserId) {
-      return;
-    }
+    if (!editingUserId) return;
     const parsed = editingUserElo.trim() ? Number.parseInt(editingUserElo.trim(), 10) : null;
     if (editingUserElo.trim() && (Number.isNaN(parsed) || (parsed ?? 0) < 0)) {
       setMessage("Az ELO csak pozitív szám lehet.");
       return;
     }
-
     setMessage("");
-    setIsLoading(true);
+    startLoading(`elo-user-${editingUserId}`);
     try {
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-
-      await patchSiteUser(editingUserId, {
-        faceitElo: parsed,
-      }, getModeratorName());
-      await loadSiteUsers();
+      if (keyError) { setMessage(keyError); return; }
+      await patchSiteUser(editingUserId, { faceitElo: parsed }, getModeratorName());
+      // Optimista frissítés – nincs re-fetch
+      setSiteUsers((prev) => prev.map((u) => u.id === editingUserId ? { ...u, faceitElo: parsed } : u));
       window.dispatchEvent(new Event("site-users-changed"));
       cancelEditUserElo();
       setMessage("Felhasználó ELO szerkesztve.");
     } catch {
       setMessage("Hálózati hiba történt.");
     } finally {
-      setIsLoading(false);
+      stopLoading(`elo-user-${editingUserId}`);
     }
   };
 
   const approveEloRequest = async (requestId: string) => {
     setMessage("");
-    setIsLoading(true);
+    startLoading(`approve-${requestId}`);
     try {
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-      const existingRequests = await fetchEloRequests();
-      const target = existingRequests.find((item) => item.id === requestId);
-      if (!target || target.status !== "pending") {
-        setMessage("A kérelem már feldolgozásra került.");
-        return;
-      }
-      const existingUsers = await fetchSiteUsers();
-      await patchSiteUser(target.userId, {
-        faceitElo: target.requestedElo,
-      }, getModeratorName());
+      if (keyError) { setMessage(keyError); return; }
+      const target = eloRequests.find((item) => item.id === requestId);
+      if (!target || target.status !== "pending") { setMessage("A kérelem már feldolgozásra került."); return; }
+      await patchSiteUser(target.userId, { faceitElo: target.requestedElo }, getModeratorName());
       await patchEloRequest(requestId, {
         status: "approved",
         resolvedAt: new Date().toISOString(),
         reviewedBy: getModeratorName(),
       });
-      await loadSiteUsers();
-      const nextRequests = await loadEloRequests();
+      // Optimista frissítés
+      setSiteUsers((prev) => prev.map((u) => u.id === target.userId ? { ...u, faceitElo: target.requestedElo } : u));
+      setEloRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: "approved" as const } : r));
       window.dispatchEvent(new Event("site-users-changed"));
       window.dispatchEvent(new Event(ELO_REQUESTS_CHANGED_EVENT));
-      setEloRequests(nextRequests);
       setMessage("Kérelem elfogadva, ELO frissítve.");
     } catch {
       setMessage("Hálózati hiba történt.");
     } finally {
-      setIsLoading(false);
+      stopLoading(`approve-${requestId}`);
     }
   };
 
   const rejectEloRequest = async (requestId: string) => {
     setMessage("");
-    setIsLoading(true);
+    startLoading(`reject-${requestId}`);
     try {
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-      const existingRequests = await fetchEloRequests();
-      const target = existingRequests.find((item) => item.id === requestId);
-      if (!target || target.status !== "pending") {
-        setMessage("A kérelem már feldolgozásra került.");
-        return;
-      }
+      if (keyError) { setMessage(keyError); return; }
+      const target = eloRequests.find((item) => item.id === requestId);
+      if (!target || target.status !== "pending") { setMessage("A kérelem már feldolgozásra került."); return; }
       await patchEloRequest(requestId, {
         status: "rejected",
         resolvedAt: new Date().toISOString(),
         reviewedBy: getModeratorName(),
       });
-      const nextRequests = await loadEloRequests();
+      setEloRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: "rejected" as const } : r));
       window.dispatchEvent(new Event(ELO_REQUESTS_CHANGED_EVENT));
-      setEloRequests(nextRequests);
       setMessage("Kérelem elutasítva.");
     } catch {
       setMessage("Hálózati hiba történt.");
     } finally {
-      setIsLoading(false);
+      stopLoading(`reject-${requestId}`);
     }
   };
 
@@ -650,131 +580,93 @@ export default function AdminPage() {
       return;
     }
     setMessage("");
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading("save-team");
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-      const existing = readSiteTeamsFromStorage();
-      const nextTeams = existing.map((team) =>
-        team.id === editingTeamId
-          ? {
-              ...team,
-              name: normalizedName,
-              logo: editingTeamLogo || undefined,
-              tier: parsedTier,
-              tierRank: parsedTier === 3 ? undefined : parsedTierRank ?? undefined,
-            }
-          : team
-      );
-      writeSiteTeamsToStorage(nextTeams);
-      setSiteTeams(nextTeams);
-      cancelEditTeam();
-      setMessage("Csapat szerkesztve.");
-      publishModeratorAction(`szerkesztette a ${normalizedName} csapatot (Tier ${parsedTier}).`);
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading("save-team");
+      if (keyError) { setMessage(keyError); return; }
     }
+    const existing = readSiteTeamsFromStorage();
+    const nextTeams = existing.map((team) =>
+      team.id === editingTeamId
+        ? {
+            ...team,
+            name: normalizedName,
+            logo: editingTeamLogo || undefined,
+            tier: parsedTier,
+            tierRank: parsedTier === 3 ? undefined : parsedTierRank ?? undefined,
+          }
+        : team
+    );
+    writeSiteTeamsToStorage(nextTeams);
+    setSiteTeams(nextTeams);
+    cancelEditTeam();
+    setMessage("Csapat szerkesztve.");
+    publishModeratorAction(`szerkesztette a ${normalizedName} csapatot (Tier ${parsedTier}).`);
   };
 
   const removeTeamAsAdmin = async (teamId: string) => {
     setMessage("");
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading(`del-team-${teamId}`);
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-      const existingTeams = readSiteTeamsFromStorage();
-      const existingInvites = readTeamInvitesFromStorage();
-      const nextTeams = existingTeams.filter((team) => team.id !== teamId);
-      const nextInvites = existingInvites.filter((invite) => invite.teamId !== teamId);
-      writeTeamInvitesToStorage(nextInvites);
-      writeSiteTeamsToStorage(nextTeams);
-      setTeamInvites(nextInvites);
-      setSiteTeams(nextTeams);
-      if (editingTeamId === teamId) {
-        cancelEditTeam();
-      }
-      setMessage("Csapat törölve.");
-      publishModeratorAction("törölt egy csapatot.");
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading(`del-team-${teamId}`);
+      if (keyError) { setMessage(keyError); return; }
     }
+    const existingTeams = readSiteTeamsFromStorage();
+    const existingInvites = readTeamInvitesFromStorage();
+    const nextTeams = existingTeams.filter((team) => team.id !== teamId);
+    const nextInvites = existingInvites.filter((invite) => invite.teamId !== teamId);
+    writeTeamInvitesToStorage(nextInvites);
+    writeSiteTeamsToStorage(nextTeams);
+    setTeamInvites(nextInvites);
+    setSiteTeams(nextTeams);
+    if (editingTeamId === teamId) cancelEditTeam();
+    setMessage("Csapat törölve.");
+    publishModeratorAction("törölt egy csapatot.");
   };
 
   const transferCaptainAsAdmin = async (teamId: string, newCaptainId: string) => {
     setMessage("");
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading(`transfer-${teamId}`);
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-      const existing = readSiteTeamsFromStorage();
-      const nextTeams = existing.map((team) =>
-        team.id === teamId && team.memberUserIds.includes(newCaptainId)
-          ? {
-              ...team,
-              ownerUserId: newCaptainId,
-            }
-          : team
-      );
-      writeSiteTeamsToStorage(nextTeams);
-      setSiteTeams(nextTeams);
-      setMessage("Kapitány átadva.");
-      publishModeratorAction("kapitányt váltott egy csapatban.");
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading(`transfer-${teamId}`);
+      if (keyError) { setMessage(keyError); return; }
     }
+    const existing = readSiteTeamsFromStorage();
+    const nextTeams = existing.map((team) =>
+      team.id === teamId && team.memberUserIds.includes(newCaptainId)
+        ? { ...team, ownerUserId: newCaptainId }
+        : team
+    );
+    writeSiteTeamsToStorage(nextTeams);
+    setSiteTeams(nextTeams);
+    setMessage("Kapitány átadva.");
+    publishModeratorAction("kapitányt váltott egy csapatban.");
   };
 
   const removeTeamMemberAsAdmin = async (teamId: string, memberId: string) => {
     setMessage("");
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading(`kick-${teamId}-${memberId}`);
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-      const existing = readSiteTeamsFromStorage();
-      const target = existing.find((team) => team.id === teamId);
-      if (!target) {
-        setMessage("A csapat már nem található.");
-        return;
-      }
-      if (target.ownerUserId === memberId) {
-        setMessage("A kapitány nem törölhető. Előbb add át a kapitányi szerepet.");
-        return;
-      }
-      const nextTeams = existing.map((team) =>
-        team.id === teamId
-          ? {
-              ...team,
-              memberUserIds: team.memberUserIds.filter((id) => id !== memberId),
-            }
-          : team
-      );
-      writeSiteTeamsToStorage(nextTeams);
-      setSiteTeams(nextTeams);
-      setMessage("Csapattag eltávolítva.");
-      publishModeratorAction("eltávolított egy csapattagot.");
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading(`kick-${teamId}-${memberId}`);
+      if (keyError) { setMessage(keyError); return; }
     }
+    const existing = readSiteTeamsFromStorage();
+    const target = existing.find((team) => team.id === teamId);
+    if (!target) { setMessage("A csapat már nem található."); return; }
+    if (target.ownerUserId === memberId) { setMessage("A kapitány nem törölhető. Előbb add át a kapitányi szerepet."); return; }
+    const nextTeams = existing.map((team) =>
+      team.id === teamId
+        ? { ...team, memberUserIds: team.memberUserIds.filter((id) => id !== memberId) }
+        : team
+    );
+    writeSiteTeamsToStorage(nextTeams);
+    setSiteTeams(nextTeams);
+    setMessage("Csapattag eltávolítva.");
+    publishModeratorAction("eltávolított egy csapattagot.");
   };
 
   const rankedUsers = sortUsersByRank(siteUsers);
@@ -797,40 +689,29 @@ export default function AdminPage() {
   };
 
   const saveBracketEdit = async () => {
-    if (!editingBracketId) {
-      return;
-    }
+    if (!editingBracketId) return;
     setMessage("");
     const normalized = normalizeBracketInput(editingBracketUrl, editingBracketName);
-    if (!normalized) {
-      setMessage("Érvénytelen bracket link.");
-      return;
-    }
+    if (!normalized) { setMessage("Érvénytelen bracket link."); return; }
 
-    setIsLoading(true);
-    try {
+    if (!isVerifiedRef.current) {
+      startLoading("save-bracket");
       const keyError = await verifyModeratorKey(adminKey);
-      if (keyError) {
-        setMessage(keyError);
-        return;
-      }
-
-      const existing = readCustomBracketsFromStorage();
-      const nextEntries = existing.map((item) =>
-        item.id === editingBracketId
-          ? { ...item, name: normalized.name, url: normalized.url, embedUrl: normalized.embedUrl }
-          : item
-      );
-      writeCustomBracketsToStorage(nextEntries);
-      setCustomBrackets(nextEntries);
-      cancelEditBracket();
-      setMessage("Bracket szerkesztve.");
-      publishModeratorAction(`szerkesztett egy bracketet (${normalized.name}).`);
-    } catch {
-      setMessage("Hálózati hiba történt.");
-    } finally {
-      setIsLoading(false);
+      stopLoading("save-bracket");
+      if (keyError) { setMessage(keyError); return; }
     }
+
+    const existing = readCustomBracketsFromStorage();
+    const nextEntries = existing.map((item) =>
+      item.id === editingBracketId
+        ? { ...item, name: normalized.name, url: normalized.url, embedUrl: normalized.embedUrl }
+        : item
+    );
+    writeCustomBracketsToStorage(nextEntries);
+    setCustomBrackets(nextEntries);
+    cancelEditBracket();
+    setMessage("Bracket szerkesztve.");
+    publishModeratorAction(`szerkesztett egy bracketet (${normalized.name}).`);
   };
 
   const saveOwnerConfig = async () => {
@@ -916,7 +797,7 @@ export default function AdminPage() {
               setIsModeratorVerified(false);
             }}
           />
-          <button type="button" className="faceit-linker-btn" onClick={verifyModeratorKeyManually} disabled={isLoading}>
+          <button type="button" className="faceit-linker-btn" onClick={verifyModeratorKeyManually} disabled={isKeyVerifying}>
             Kulcs ellenőrzése
           </button>
         </div>
@@ -932,8 +813,8 @@ export default function AdminPage() {
             accept="image/*"
             onChange={handleMatchImageSelect}
           />
-          <button type="button" className="faceit-linker-btn" onClick={addMatch} disabled={isLoading}>
-            {isLoading ? "..." : "Hozzáadás"}
+          <button type="button" className="faceit-linker-btn" onClick={addMatch} disabled={isItemLoading("add-match")}>
+            {isItemLoading("add-match") ? "..." : "Hozzáadás"}
           </button>
         </div>
         <div className="faceit-linker-row" style={{ marginTop: "10px" }}>
@@ -1007,7 +888,6 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => startEditMatch(item)}
-                  disabled={isLoading}
                   aria-label="Match szerkesztése"
                   title="Match szerkesztése"
                 >
@@ -1016,7 +896,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => removeMatch(item.id)}
-                  disabled={isLoading}
+                  disabled={isItemLoading(`del-match-${item.id}`)}
                   aria-label="Match törlése"
                   title="Match törlése"
                 >
@@ -1053,10 +933,10 @@ export default function AdminPage() {
                       />
                     </div>
                     <div className="faceit-linker-row" style={{ marginTop: "8px" }}>
-                      <button type="button" className="faceit-linker-btn" onClick={saveMatchEdit} disabled={isLoading}>
+                      <button type="button" className="faceit-linker-btn" onClick={saveMatchEdit} disabled={isItemLoading("save-match")}>
                         Mentés
                       </button>
-                      <button type="button" className="faceit-linker-btn" onClick={cancelEditMatch} disabled={isLoading}>
+                      <button type="button" className="faceit-linker-btn" onClick={cancelEditMatch}>
                         Mégse
                       </button>
                     </div>
@@ -1083,8 +963,8 @@ export default function AdminPage() {
             value={bracketUrl}
             onChange={(event) => setBracketUrl(event.target.value)}
           />
-          <button type="button" className="faceit-linker-btn" onClick={addBracket} disabled={isLoading}>
-            {isLoading ? "..." : "Hozzáadás"}
+          <button type="button" className="faceit-linker-btn" onClick={addBracket} disabled={isItemLoading("add-bracket")}>
+            {isItemLoading("add-bracket") ? "..." : "Hozzáadás"}
           </button>
         </div>
         {customBrackets.length > 0 && (
@@ -1099,7 +979,6 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => startEditBracket(item)}
-                  disabled={isLoading}
                   aria-label="Bracket szerkesztése"
                   title="Bracket szerkesztése"
                 >
@@ -1108,7 +987,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => removeBracket(item.id)}
-                  disabled={isLoading}
+                  disabled={isItemLoading(`del-bracket-${item.id}`)}
                   aria-label="Bracket törlése"
                   title="Bracket törlése"
                 >
@@ -1131,10 +1010,10 @@ export default function AdminPage() {
                       />
                     </div>
                     <div className="faceit-linker-row" style={{ marginTop: "8px" }}>
-                      <button type="button" className="faceit-linker-btn" onClick={saveBracketEdit} disabled={isLoading}>
+                      <button type="button" className="faceit-linker-btn" onClick={saveBracketEdit} disabled={isItemLoading("save-bracket")}>
                         Mentés
                       </button>
-                      <button type="button" className="faceit-linker-btn" onClick={cancelEditBracket} disabled={isLoading}>
+                      <button type="button" className="faceit-linker-btn" onClick={cancelEditBracket}>
                         Mégse
                       </button>
                     </div>
@@ -1181,7 +1060,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => approveEloRequest(request.id)}
-                    disabled={isLoading}
+                    disabled={isItemLoading(`approve-${request.id}`)}
                     aria-label="Kérelem elfogadása"
                     title="Kérelem elfogadása"
                   >
@@ -1190,7 +1069,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => rejectEloRequest(request.id)}
-                    disabled={isLoading}
+                    disabled={isItemLoading(`reject-${request.id}`)}
                     aria-label="Kérelem elutasítása"
                     title="Kérelem elutasítása"
                   >
@@ -1230,7 +1109,6 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => startEditUserElo(item)}
-                  disabled={isLoading}
                   aria-label="Felhasználó ELO szerkesztése"
                   title="Felhasználó ELO szerkesztése"
                 >
@@ -1239,7 +1117,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => removeSiteUser(item.id)}
-                  disabled={isLoading}
+                  disabled={isItemLoading(`del-user-${item.id}`)}
                   aria-label="Felhasználó törlése"
                   title="Felhasználó törlése"
                 >
@@ -1254,10 +1132,10 @@ export default function AdminPage() {
                         value={editingUserElo}
                         onChange={(event) => setEditingUserElo(event.target.value)}
                       />
-                      <button type="button" className="faceit-linker-btn" onClick={saveUserElo} disabled={isLoading}>
+                      <button type="button" className="faceit-linker-btn" onClick={saveUserElo} disabled={isItemLoading(`elo-user-${editingUserId}`)}>
                         Mentés
                       </button>
-                      <button type="button" className="faceit-linker-btn" onClick={cancelEditUserElo} disabled={isLoading}>
+                      <button type="button" className="faceit-linker-btn" onClick={cancelEditUserElo}>
                         Mégse
                       </button>
                     </div>
@@ -1303,7 +1181,6 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => startEditTeam(team)}
-                  disabled={isLoading}
                   aria-label="Csapat szerkesztése"
                   title="Csapat szerkesztése"
                 >
@@ -1312,7 +1189,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => removeTeamAsAdmin(team.id)}
-                  disabled={isLoading}
+                  disabled={isItemLoading(`del-team-${team.id}`)}
                   aria-label="Csapat törlése"
                   title="Csapat törlése"
                 >
@@ -1361,10 +1238,10 @@ export default function AdminPage() {
                       />
                     )}
                     <div className="faceit-linker-row" style={{ marginTop: "8px" }}>
-                      <button type="button" className="faceit-linker-btn" onClick={saveTeamEdit} disabled={isLoading}>
+                      <button type="button" className="faceit-linker-btn" onClick={saveTeamEdit} disabled={isItemLoading("save-team")}>
                         Mentés
                       </button>
-                      <button type="button" className="faceit-linker-btn" onClick={cancelEditTeam} disabled={isLoading}>
+                      <button type="button" className="faceit-linker-btn" onClick={cancelEditTeam}>
                         Mégse
                       </button>
                     </div>
@@ -1384,7 +1261,7 @@ export default function AdminPage() {
                               type="button"
                               className="faceit-linker-btn secondary"
                               onClick={() => transferCaptainAsAdmin(team.id, memberId)}
-                              disabled={isLoading}
+                              disabled={isItemLoading(`transfer-${team.id}`)}
                             >
                               Kapitány átadás
                             </button>
@@ -1392,7 +1269,7 @@ export default function AdminPage() {
                               type="button"
                               className="faceit-linker-btn secondary"
                               onClick={() => removeTeamMemberAsAdmin(team.id, memberId)}
-                              disabled={isLoading}
+                              disabled={isItemLoading(`kick-${team.id}-${memberId}`)}
                               style={{ marginLeft: "6px" }}
                             >
                               Tag törlése

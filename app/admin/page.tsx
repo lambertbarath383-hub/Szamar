@@ -38,6 +38,7 @@ import { publishModeratorAction } from "@/app/lib/moderator-actions";
 
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState("");
+  const [isModerator, setIsModerator] = useState<boolean | null>(null); // null = még tölt
   const [matchImageDataUrl, setMatchImageDataUrl] = useState("");
   const [matchImageName, setMatchImageName] = useState("");
   const [matchSourceUrl, setMatchSourceUrl] = useState("");
@@ -112,7 +113,14 @@ export default function AdminPage() {
 
   useEffect(() => {
     // Ellenőrzés: owner-e a bejelentkezett moderátor
+    // Moderátor bejelentkezés ellenőrzése – ha nincs session, nem férhet hozzá
     const rawSession = typeof window !== "undefined" ? window.sessionStorage.getItem("moderator-session") : null;
+    if (!rawSession) {
+      setIsModerator(false);
+      return;
+    }
+    setIsModerator(true);
+
     if (rawSession) {
       try {
         const parsed = JSON.parse(rawSession) as { name?: string; isOwner?: boolean };
@@ -747,6 +755,39 @@ export default function AdminPage() {
       setConfigMessage("Hálózati hiba.");
     }
   };
+
+  // Még töltődik – ne villanjon fel semmi
+  if (isModerator === null) {
+    return <main className="container"><p style={{ color: "#aaa", marginTop: "40px" }}>Betöltés...</p></main>;
+  }
+
+  // Nincs bejelentkezve moderátorként
+  if (!isModerator) {
+    return (
+      <main className="container" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: "16px" }}>
+        <h1 style={{ color: "#ce2939", fontSize: "2rem", fontWeight: 900 }}>🔒 Hozzáférés megtagadva</h1>
+        <p style={{ color: "#aaa", fontSize: "1rem", textAlign: "center" }}>
+          Az admin panelhez moderátorként kell bejelentkezni.
+        </p>
+        <a
+          href="/auth"
+          style={{
+            display: "inline-block",
+            marginTop: "8px",
+            padding: "12px 28px",
+            background: "#ce2939",
+            color: "#fff",
+            borderRadius: "8px",
+            fontWeight: 700,
+            textDecoration: "none",
+            fontSize: "1rem",
+          }}
+        >
+          Bejelentkezés
+        </a>
+      </main>
+    );
+  }
 
   return (
     <main className="container">

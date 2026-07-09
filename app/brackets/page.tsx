@@ -24,7 +24,7 @@ export default function BracketsPage() {
     }, 0);
     const intervalId = setInterval(() => {
       loadBrackets().catch(() => {});
-    }, 15000);
+    }, 60000);
     const onLoadBrackets = () => {
       loadBrackets().catch(() => {});
     };

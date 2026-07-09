@@ -8,8 +8,9 @@ type SiteUsersResponse = {
   message?: string;
 };
 
-export async function fetchSiteUsers(): Promise<PublicSiteUser[]> {
-  const response = await fetch("/api/site-users", { cache: "no-store" });
+export async function fetchSiteUsers(options?: { light?: boolean }): Promise<PublicSiteUser[]> {
+  const url = options?.light ? "/api/site-users?light=1" : "/api/site-users";
+  const response = await fetch(url, { cache: "no-store" });
   const payload = (await response.json()) as SiteUsersResponse;
   if (!response.ok || !payload.ok || !Array.isArray(payload.data)) {
     throw new Error(payload.message ?? "Nem sikerült betölteni a felhasználókat.");

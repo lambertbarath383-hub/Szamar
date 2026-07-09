@@ -29,11 +29,10 @@ export default function MatchesPage() {
     }, 0);
     const intervalId = setInterval(() => {
       loadCustomMatches().catch(() => {});
-    }, 15000);
+    }, 60000);
     const onCustomMatchesChanged = () => {
       loadCustomMatches().catch(() => {});
     };
-
     window.addEventListener(CUSTOM_MATCHES_CHANGED_EVENT, onCustomMatchesChanged);
 
     return () => {

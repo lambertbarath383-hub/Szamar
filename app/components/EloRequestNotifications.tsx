@@ -40,7 +40,7 @@ export default function EloRequestNotifications() {
     };
 
     onUpdateState();
-    const intervalId = setInterval(onUpdateState, 15000);
+    const intervalId = setInterval(onUpdateState, 60000);
     window.addEventListener("site-user-session-changed", onUpdateState);
     window.addEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdateState);
     return () => {

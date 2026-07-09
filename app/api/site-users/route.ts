@@ -2,12 +2,19 @@ import { NextResponse } from "next/server";
 import { type SiteUser } from "@/app/lib/site-users";
 import { readSiteUsersFromFile, sanitizeSiteUser, writeSiteUsersToFile } from "@/app/lib/server/site-users-store";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const light = searchParams.get("light") === "1";
   const users = await readSiteUsersFromFile();
-  return NextResponse.json({
-    ok: true,
-    data: users.map(sanitizeSiteUser),
+  const data = users.map((u) => {
+    const sanitized = sanitizeSiteUser(u);
+    if (light) {
+      const { avatar: _avatar, ...rest } = sanitized;
+      return rest;
+    }
+    return sanitized;
   });
+  return NextResponse.json({ ok: true, data });
 }
 
 export async function POST(request: Request) {

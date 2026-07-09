@@ -128,7 +128,7 @@ export default function NavbarAuthControl() {
         }
       } catch {}
     };
-    const intervalId = setInterval(() => { pollModeratorActions().catch(() => {}); }, 10000);
+    const intervalId = setInterval(() => { pollModeratorActions().catch(() => {}); }, 30000);
 
     return () => {
       window.removeEventListener("moderator-session-changed", onSessionChanged);

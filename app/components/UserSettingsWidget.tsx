@@ -159,7 +159,7 @@ export default function UserSettingsWidget() {
       updatePending().catch(() => {});
     };
     onUpdatePending();
-    const intervalId = setInterval(onUpdatePending, 15000);
+    const intervalId = setInterval(onUpdatePending, 60000);
     window.addEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdatePending);
     return () => {
       clearInterval(intervalId);

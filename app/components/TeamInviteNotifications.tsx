@@ -50,7 +50,7 @@ export default function TeamInviteNotifications() {
         }
       }
       try {
-        setUsers(await fetchSiteUsers());
+        setUsers(await fetchSiteUsers({ light: true }));
       } catch {
         setUsers([]);
       }
@@ -66,7 +66,7 @@ export default function TeamInviteNotifications() {
     };
 
     onUpdateState();
-    const intervalId = setInterval(onUpdateState, 15000);
+    const intervalId = setInterval(onUpdateState, 60000);
     window.addEventListener("site-user-session-changed", onUpdateState);
     window.addEventListener("site-users-changed", onUpdateState);
     window.addEventListener(SITE_TEAMS_CHANGED_EVENT, onUpdateState);

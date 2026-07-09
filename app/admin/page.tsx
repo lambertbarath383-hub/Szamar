@@ -77,8 +77,8 @@ export default function AdminPage() {
   const [currentModeratorPassword, setCurrentModeratorPassword] = useState("");
   const [currentAdminKey, setCurrentAdminKey] = useState("");
 
-  const loadSiteUsers = async () => {
-    const users = await fetchSiteUsers();
+  const loadSiteUsers = async (light = false) => {
+    const users = await fetchSiteUsers({ light });
     setSiteUsers(users);
     return users;
   };
@@ -123,7 +123,7 @@ export default function AdminPage() {
       } catch {}
       setCustomMatches(readCustomMatchEntriesFromStorage());
       setCustomBrackets(readCustomBracketsFromStorage());
-      loadSiteUsers().catch(() => {});
+      loadSiteUsers(true).catch(() => {});
       setSiteTeams(readSiteTeamsFromStorage());
       setTeamInvites(readTeamInvitesFromStorage());
       loadEloRequests().catch(() => {});
@@ -134,7 +134,7 @@ export default function AdminPage() {
     }, 0);
     const intervalId = setInterval(() => {
       loadAdminState().catch(() => {});
-    }, 15000);
+    }, 60000);
 
     return () => {
       clearTimeout(timeoutId);

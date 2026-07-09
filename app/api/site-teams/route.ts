@@ -24,9 +24,12 @@ function isSiteTeam(value: unknown): value is SiteTeam {
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const light = searchParams.get("light") === "1";
   const data = await readSharedArray<SiteTeam>(FILE_NAME, isSiteTeam);
-  return NextResponse.json({ ok: true, data });
+  const result = light ? data.map(({ logo: _logo, ...rest }) => rest) : data;
+  return NextResponse.json({ ok: true, data: result });
 }
 
 export async function PUT(request: Request) {

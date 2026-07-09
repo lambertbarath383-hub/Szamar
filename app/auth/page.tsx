@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { buildFaceitProfileUrl, extractFaceitNickname } from "@/app/lib/faceit-profile";
-import { readSiteUsersFromStorage, writeSiteUsersToStorage, type SiteUser } from "@/app/lib/site-users";
+import { type SiteUser } from "@/app/lib/site-users";
 
 type FaceitSummaryResponse = {
   ok?: boolean;
@@ -81,12 +81,6 @@ export default function AuthPage() {
 
     setIsLoading(true);
     try {
-      const existingUsers = readSiteUsersFromStorage();
-      if (existingUsers.some((item) => item.email.toLowerCase() === email)) {
-        setMessage("Ezzel az e-mail címmel már van regisztráció.");
-        return;
-      }
-
       let faceitElo: number | null = null;
       let faceitLevel: number | null = null;
       let country: string | undefined;
@@ -118,13 +112,27 @@ export default function AuthPage() {
         createdAt: new Date().toISOString(),
       };
 
-      const nextUsers = [...existingUsers, nextUser];
-      writeSiteUsersToStorage(nextUsers);
+      const response = await fetch("/api/site-users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...nextUser,
+          mode: "register",
+        }),
+      });
+      const payload = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !payload.ok) {
+        setMessage(payload.message ?? "Sikertelen regisztráció.");
+        return;
+      }
       window.localStorage.setItem(
         "site-user-session",
         JSON.stringify({ id: nextUser.id, name: nextUser.name, email: nextUser.email })
       );
       window.dispatchEvent(new Event("site-user-session-changed"));
+      window.dispatchEvent(new Event("site-users-changed"));
       setMessage(`Sikeres regisztráció: ${nextUser.name}`);
       setRegisterName("");
       setRegisterEmail("");
@@ -137,7 +145,7 @@ export default function AuthPage() {
     }
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setMessage("");
     if (isModeratorSessionActive()) {
       setMessage("Moderátorként már be vagy jelentkezve. Előbb jelentkezz ki.");
@@ -150,20 +158,40 @@ export default function AuthPage() {
       return;
     }
 
-    const users = readSiteUsersFromStorage();
-    const user = users.find((item) => item.email.toLowerCase() === email && item.password === password);
-    if (!user) {
-      setMessage("Hibás e-mail vagy jelszó.");
-      return;
-    }
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/site-users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "login",
+          email,
+          password,
+        }),
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        user?: { id: string; name: string; email: string };
+        message?: string;
+      };
+      if (!response.ok || !payload.ok || !payload.user) {
+        setMessage(payload.message ?? "Hibás e-mail vagy jelszó.");
+        return;
+      }
+      const user = payload.user;
 
-    window.localStorage.setItem(
-      "site-user-session",
-      JSON.stringify({ id: user.id, name: user.name, email: user.email })
-    );
-    window.dispatchEvent(new Event("site-user-session-changed"));
-    setMessage(`Sikeres bejelentkezés: ${user.name}`);
-    setLoginPassword("");
+      window.localStorage.setItem(
+        "site-user-session",
+        JSON.stringify({ id: user.id, name: user.name, email: user.email })
+      );
+      window.dispatchEvent(new Event("site-user-session-changed"));
+      setMessage(`Sikeres bejelentkezés: ${user.name}`);
+      setLoginPassword("");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleModeratorLogin = async () => {
@@ -205,7 +233,7 @@ export default function AuthPage() {
     }
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     setMessage("");
     if (isModeratorSessionActive()) {
       setMessage("Moderátorként már be vagy jelentkezve. Előbb jelentkezz ki.");
@@ -221,27 +249,32 @@ export default function AuthPage() {
       return;
     }
 
-    const users = readSiteUsersFromStorage();
-    const userExists = users.some((item) => item.email.toLowerCase() === email);
-    if (!userExists) {
-      setMessage("Nem található felhasználó ezzel az e-mail címmel.");
-      return;
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/site-users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "reset_password",
+          email,
+          password: resetPassword,
+        }),
+      });
+      const payload = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !payload.ok) {
+        setMessage(payload.message ?? "Nem sikerült jelszót módosítani.");
+        return;
+      }
+      setResetEmail("");
+      setResetPassword("");
+      setResetConfirmPassword("");
+      setShowResetPassword(false);
+      setMessage("Új jelszó mentve. Most már be tudsz jelentkezni.");
+    } finally {
+      setIsLoading(false);
     }
-
-    const nextUsers = users.map((item) =>
-      item.email.toLowerCase() === email
-        ? {
-            ...item,
-            password: resetPassword,
-          }
-        : item
-    );
-    writeSiteUsersToStorage(nextUsers);
-    setResetEmail("");
-    setResetPassword("");
-    setResetConfirmPassword("");
-    setShowResetPassword(false);
-    setMessage("Új jelszó mentve. Most már be tudsz jelentkezni.");
   };
 
   return (

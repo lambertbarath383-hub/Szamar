@@ -413,19 +413,30 @@
 .faceit-linker-list li {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 8px;
   border: 1px dashed rgba(255, 255, 255, 0.5);
   padding: 8px;
   font-size: 0.9rem;
 }
 
+.faceit-linker-list li > span {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
 .faceit-linker-list button {
   border: 1px solid #fff;
   background: transparent;
   color: #fff;
-  padding: 4px 8px;
+  padding: 8px 12px;
+  min-height: 36px;
+  min-width: 44px;
   cursor: pointer;
   font-family: Consolas, monospace;
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 900px) {

@@ -58,7 +58,13 @@ export function writeSiteUsersToStorage(users: SiteUser[]) {
   window.dispatchEvent(new Event(SITE_USERS_CHANGED_EVENT));
 }
 
-export function sortUsersByRank(users: SiteUser[]): SiteUser[] {
+type RankableUser = {
+  name: string;
+  faceitElo?: number | null;
+  faceitLevel?: number | null;
+};
+
+export function sortUsersByRank<T extends RankableUser>(users: T[]): T[] {
   return [...users].sort((a, b) => {
     const eloA = a.faceitElo ?? 0;
     const eloB = b.faceitElo ?? 0;

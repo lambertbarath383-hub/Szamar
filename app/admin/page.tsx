@@ -14,11 +14,9 @@ import {
   type CustomBracketEntry,
 } from "@/app/lib/custom-brackets";
 import {
-  readSiteUsersFromStorage,
   sortUsersByRank,
-  writeSiteUsersToStorage,
-  type SiteUser,
 } from "@/app/lib/site-users";
+import { deleteSiteUser, fetchSiteUsers, patchSiteUser, type PublicSiteUser } from "@/app/lib/site-users-api";
 import {
   readSiteTeamsFromStorage,
   readTeamInvitesFromStorage,
@@ -28,10 +26,10 @@ import {
   type TeamInvite,
 } from "@/app/lib/site-teams";
 import {
-  readEloRequestsFromStorage,
-  writeEloRequestsToStorage,
+  ELO_REQUESTS_CHANGED_EVENT,
   type EloChangeRequest,
 } from "@/app/lib/elo-requests";
+import { fetchEloRequests, patchEloRequest } from "@/app/lib/elo-requests-api";
 import { publishModeratorAction } from "@/app/lib/moderator-actions";
 
 export default function AdminPage() {
@@ -46,7 +44,7 @@ export default function AdminPage() {
   const [bracketUrl, setBracketUrl] = useState("");
   const [bracketName, setBracketName] = useState("");
   const [customBrackets, setCustomBrackets] = useState<CustomBracketEntry[]>([]);
-  const [siteUsers, setSiteUsers] = useState<SiteUser[]>([]);
+  const [siteUsers, setSiteUsers] = useState<PublicSiteUser[]>([]);
   const [siteTeams, setSiteTeams] = useState<SiteTeam[]>([]);
   const [teamInvites, setTeamInvites] = useState<TeamInvite[]>([]);
   const [eloRequests, setEloRequests] = useState<EloChangeRequest[]>([]);
@@ -67,16 +65,29 @@ export default function AdminPage() {
   const [editingTeamTierRank, setEditingTeamTierRank] = useState("");
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isModeratorVerified, setIsModeratorVerified] = useState(false);
+
+  const loadSiteUsers = async () => {
+    const users = await fetchSiteUsers();
+    setSiteUsers(users);
+    return users;
+  };
+
+  const loadEloRequests = async () => {
+    const requests = await fetchEloRequests();
+    setEloRequests(requests);
+    return requests;
+  };
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       setAdminKey(window.localStorage.getItem("admin-key") ?? "");
       setCustomMatches(readCustomMatchEntriesFromStorage());
       setCustomBrackets(readCustomBracketsFromStorage());
-      setSiteUsers(readSiteUsersFromStorage());
+      loadSiteUsers().catch(() => setSiteUsers([]));
       setSiteTeams(readSiteTeamsFromStorage());
       setTeamInvites(readTeamInvitesFromStorage());
-      setEloRequests(readEloRequestsFromStorage());
+      loadEloRequests().catch(() => setEloRequests([]));
     }, 0);
 
     return () => clearTimeout(timeoutId);
@@ -85,27 +96,63 @@ export default function AdminPage() {
   const verifyModeratorKey = async (key: string): Promise<string | null> => {
     const normalizedAdminKey = key.trim();
     if (!normalizedAdminKey) {
+      setIsModeratorVerified(false);
       return "Add meg a moderátor jelszót (kulcsot).";
     }
 
-    const response = await fetch("/api/moderator/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: "admin",
-        password: normalizedAdminKey,
-      }),
-    });
+    if (isModeratorVerified) {
+      return null;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    let response: Response;
+    try {
+      response = await fetch("/api/moderator/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: "admin",
+          password: normalizedAdminKey,
+        }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      clearTimeout(timeoutId);
+      setIsModeratorVerified(false);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return "Időtúllépés a moderátor ellenőrzésnél. Próbáld újra.";
+      }
+      return "Nem érhető el a moderátor ellenőrzés. Próbáld újra.";
+    }
+    clearTimeout(timeoutId);
 
     const payload = (await response.json()) as { ok?: boolean; message?: string };
     if (!response.ok || !payload.ok) {
+      setIsModeratorVerified(false);
       return payload.message ?? "Hibás kulcs.";
     }
 
     window.localStorage.setItem("admin-key", normalizedAdminKey);
+    setIsModeratorVerified(true);
     return null;
+  };
+
+  const verifyModeratorKeyManually = async () => {
+    setMessage("");
+    setIsLoading(true);
+    try {
+      const keyError = await verifyModeratorKey(adminKey);
+      if (keyError) {
+        setMessage(keyError);
+        return;
+      }
+      setMessage("Moderátor kulcs ellenőrizve.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const addMatch = async () => {
@@ -360,10 +407,9 @@ export default function AdminPage() {
         return;
       }
 
-      const existing = readSiteUsersFromStorage();
-      const nextUsers = existing.filter((item) => item.id !== userId);
-      writeSiteUsersToStorage(nextUsers);
-      setSiteUsers(nextUsers);
+      await deleteSiteUser(userId);
+      await loadSiteUsers();
+      window.dispatchEvent(new Event("site-users-changed"));
       setMessage("Felhasználó törölve.");
     } catch {
       setMessage("Hálózati hiba történt.");
@@ -372,7 +418,7 @@ export default function AdminPage() {
     }
   };
 
-  const startEditUserElo = (item: SiteUser) => {
+  const startEditUserElo = (item: PublicSiteUser) => {
     setEditingUserId(item.id);
     setEditingUserElo(item.faceitElo !== null && item.faceitElo !== undefined ? String(item.faceitElo) : "");
   };
@@ -401,17 +447,11 @@ export default function AdminPage() {
         return;
       }
 
-      const existing = readSiteUsersFromStorage();
-      const nextUsers = existing.map((item) =>
-        item.id === editingUserId
-          ? {
-              ...item,
-              faceitElo: parsed,
-            }
-          : item
-      );
-      writeSiteUsersToStorage(nextUsers);
-      setSiteUsers(nextUsers);
+      await patchSiteUser(editingUserId, {
+        faceitElo: parsed,
+      });
+      await loadSiteUsers();
+      window.dispatchEvent(new Event("site-users-changed"));
       cancelEditUserElo();
       setMessage("Felhasználó ELO szerkesztve.");
     } catch {
@@ -430,34 +470,25 @@ export default function AdminPage() {
         setMessage(keyError);
         return;
       }
-      const existingRequests = readEloRequestsFromStorage();
+      const existingRequests = await fetchEloRequests();
       const target = existingRequests.find((item) => item.id === requestId);
       if (!target || target.status !== "pending") {
         setMessage("A kérelem már feldolgozásra került.");
         return;
       }
-      const existingUsers = readSiteUsersFromStorage();
-      const nextUsers = existingUsers.map((user) =>
-        user.id === target.userId
-          ? {
-              ...user,
-              faceitElo: target.requestedElo,
-            }
-          : user
-      );
-      const nextRequests = existingRequests.map((request) =>
-        request.id === requestId
-          ? {
-              ...request,
-              status: "approved" as const,
-              resolvedAt: new Date().toISOString(),
-              reviewedBy: "moderator",
-            }
-          : request
-      );
-      writeSiteUsersToStorage(nextUsers);
-      writeEloRequestsToStorage(nextRequests);
-      setSiteUsers(nextUsers);
+      const existingUsers = await fetchSiteUsers();
+      await patchSiteUser(target.userId, {
+        faceitElo: target.requestedElo,
+      });
+      await patchEloRequest(requestId, {
+        status: "approved",
+        resolvedAt: new Date().toISOString(),
+        reviewedBy: "moderator",
+      });
+      await loadSiteUsers();
+      const nextRequests = await loadEloRequests();
+      window.dispatchEvent(new Event("site-users-changed"));
+      window.dispatchEvent(new Event(ELO_REQUESTS_CHANGED_EVENT));
       setEloRequests(nextRequests);
       setMessage("Kérelem elfogadva, ELO frissítve.");
       publishModeratorAction(
@@ -479,27 +510,23 @@ export default function AdminPage() {
         setMessage(keyError);
         return;
       }
-      const existingRequests = readEloRequestsFromStorage();
+      const existingRequests = await fetchEloRequests();
       const target = existingRequests.find((item) => item.id === requestId);
       if (!target || target.status !== "pending") {
         setMessage("A kérelem már feldolgozásra került.");
         return;
       }
-      const nextRequests = existingRequests.map((request) =>
-        request.id === requestId
-          ? {
-              ...request,
-              status: "rejected" as const,
-              resolvedAt: new Date().toISOString(),
-              reviewedBy: "moderator",
-            }
-          : request
-      );
-      writeEloRequestsToStorage(nextRequests);
+      await patchEloRequest(requestId, {
+        status: "rejected",
+        resolvedAt: new Date().toISOString(),
+        reviewedBy: "moderator",
+      });
+      const nextRequests = await loadEloRequests();
+      window.dispatchEvent(new Event(ELO_REQUESTS_CHANGED_EVENT));
       setEloRequests(nextRequests);
       setMessage("Kérelem elutasítva.");
       publishModeratorAction(
-        `elutasította ${readSiteUsersFromStorage().find((item) => item.id === target.userId)?.name ?? "egy játékos"} ELO kérelmét.`
+        `elutasította ${(await fetchSiteUsers()).find((item) => item.id === target.userId)?.name ?? "egy játékos"} ELO kérelmét.`
       );
     } catch {
       setMessage("Hálózati hiba történt.");
@@ -763,8 +790,14 @@ export default function AdminPage() {
             className="faceit-linker-input"
             placeholder="Kulcs (moderátor jelszó)"
             value={adminKey}
-            onChange={(event) => setAdminKey(event.target.value)}
+            onChange={(event) => {
+              setAdminKey(event.target.value);
+              setIsModeratorVerified(false);
+            }}
           />
+          <button type="button" className="faceit-linker-btn" onClick={verifyModeratorKeyManually} disabled={isLoading}>
+            Kulcs ellenőrzése
+          </button>
         </div>
         {message && <p className="faceit-linker-message">{message}</p>}
       </div>

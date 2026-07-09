@@ -1,12 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  ELO_REQUESTS_CHANGED_EVENT,
-  readEloRequestsFromStorage,
-  writeEloRequestsToStorage,
-  type EloChangeRequest,
-} from "@/app/lib/elo-requests";
+import { ELO_REQUESTS_CHANGED_EVENT, type EloChangeRequest } from "@/app/lib/elo-requests";
+import { fetchEloRequests, patchEloRequest } from "@/app/lib/elo-requests-api";
 
 type SiteUserSession = {
   id: string;
@@ -19,7 +15,7 @@ export default function EloRequestNotifications() {
   const [requests, setRequests] = useState<EloChangeRequest[]>([]);
 
   useEffect(() => {
-    const updateState = () => {
+    const updateState = async () => {
       const rawSession = window.localStorage.getItem("site-user-session");
       if (!rawSession) {
         setSession(null);
@@ -32,17 +28,25 @@ export default function EloRequestNotifications() {
           setSession(null);
         }
       }
-      setRequests(readEloRequestsFromStorage());
+      try {
+        setRequests(await fetchEloRequests());
+      } catch {
+        setRequests([]);
+      }
     };
 
-    updateState();
-    window.addEventListener("site-user-session-changed", updateState);
-    window.addEventListener(ELO_REQUESTS_CHANGED_EVENT, updateState);
-    window.addEventListener("storage", updateState);
+    const onUpdateState = () => {
+      updateState().catch(() => {});
+    };
+
+    onUpdateState();
+    const intervalId = setInterval(onUpdateState, 15000);
+    window.addEventListener("site-user-session-changed", onUpdateState);
+    window.addEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdateState);
     return () => {
-      window.removeEventListener("site-user-session-changed", updateState);
-      window.removeEventListener(ELO_REQUESTS_CHANGED_EVENT, updateState);
-      window.removeEventListener("storage", updateState);
+      clearInterval(intervalId);
+      window.removeEventListener("site-user-session-changed", onUpdateState);
+      window.removeEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdateState);
     };
   }, []);
 
@@ -66,16 +70,12 @@ export default function EloRequestNotifications() {
       .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
   }, [requests, session]);
 
-  const markSeen = (requestId: string) => {
-    const nextRequests = readEloRequestsFromStorage().map((request) =>
-      request.id === requestId
-        ? {
-            ...request,
-            userSeenAt: new Date().toISOString(),
-          }
-        : request
+  const markSeen = async (requestId: string) => {
+    await patchEloRequest(requestId, { userSeenAt: new Date().toISOString() });
+    setRequests((previous) =>
+      previous.map((request) => (request.id === requestId ? { ...request, userSeenAt: new Date().toISOString() } : request))
     );
-    writeEloRequestsToStorage(nextRequests);
+    window.dispatchEvent(new Event(ELO_REQUESTS_CHANGED_EVENT));
   };
 
   if (!session || (!pending && unseenResolved.length === 0)) {

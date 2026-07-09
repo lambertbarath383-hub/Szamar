@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { readSiteUsersFromStorage, sortUsersByRank, type SiteUser } from "@/app/lib/site-users";
+import { sortUsersByRank } from "@/app/lib/site-users";
+import { fetchSiteUsers, type PublicSiteUser } from "@/app/lib/site-users-api";
 import {
   findTeamByMemberId,
   readSiteTeamsFromStorage,
@@ -23,7 +24,7 @@ type SiteUserSession = {
 
 export default function TeamsPage() {
   const [session, setSession] = useState<SiteUserSession | null>(null);
-  const [users, setUsers] = useState<SiteUser[]>([]);
+  const [users, setUsers] = useState<PublicSiteUser[]>([]);
   const [teams, setTeams] = useState<SiteTeam[]>([]);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -35,7 +36,7 @@ export default function TeamsPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const updateState = () => {
+    const updateState = async () => {
       const rawSession = window.localStorage.getItem("site-user-session");
       if (!rawSession) {
         setSession(null);
@@ -49,29 +50,37 @@ export default function TeamsPage() {
         }
       }
 
-      setUsers(readSiteUsersFromStorage());
+      try {
+        setUsers(await fetchSiteUsers());
+      } catch {
+        setUsers([]);
+      }
       setTeams(readSiteTeamsFromStorage());
       setInvites(readTeamInvitesFromStorage());
     };
 
-    updateState();
-    window.addEventListener("site-user-session-changed", updateState);
-    window.addEventListener("site-users-changed", updateState);
-    window.addEventListener(SITE_TEAMS_CHANGED_EVENT, updateState);
-    window.addEventListener(TEAM_INVITES_CHANGED_EVENT, updateState);
-    window.addEventListener("storage", updateState);
+    const onUpdateState = () => {
+      updateState().catch(() => {});
+    };
+
+    onUpdateState();
+    window.addEventListener("site-user-session-changed", onUpdateState);
+    window.addEventListener("site-users-changed", onUpdateState);
+    window.addEventListener(SITE_TEAMS_CHANGED_EVENT, onUpdateState);
+    window.addEventListener(TEAM_INVITES_CHANGED_EVENT, onUpdateState);
+    window.addEventListener("storage", onUpdateState);
 
     return () => {
-      window.removeEventListener("site-user-session-changed", updateState);
-      window.removeEventListener("site-users-changed", updateState);
-      window.removeEventListener(SITE_TEAMS_CHANGED_EVENT, updateState);
-      window.removeEventListener(TEAM_INVITES_CHANGED_EVENT, updateState);
-      window.removeEventListener("storage", updateState);
+      window.removeEventListener("site-user-session-changed", onUpdateState);
+      window.removeEventListener("site-users-changed", onUpdateState);
+      window.removeEventListener(SITE_TEAMS_CHANGED_EVENT, onUpdateState);
+      window.removeEventListener(TEAM_INVITES_CHANGED_EVENT, onUpdateState);
+      window.removeEventListener("storage", onUpdateState);
     };
   }, []);
 
   const usersById = useMemo(() => {
-    const mapped = new Map<string, SiteUser>();
+    const mapped = new Map<string, PublicSiteUser>();
     for (const user of users) {
       mapped.set(user.id, user);
     }
@@ -168,7 +177,7 @@ export default function TeamsPage() {
     }
     return selectedTeam.memberUserIds
       .map((memberId) => usersById.get(memberId))
-      .filter((member): member is SiteUser => Boolean(member))
+      .filter((member): member is PublicSiteUser => Boolean(member))
       .sort((a, b) => {
         const eloA = a.faceitElo ?? -1;
         const eloB = b.faceitElo ?? -1;
@@ -197,7 +206,7 @@ export default function TeamsPage() {
     return () => clearTimeout(timeoutId);
   }, [selectedTeam, teams]);
 
-  const getUserAvatar = (user: SiteUser) => {
+  const getUserAvatar = (user: PublicSiteUser) => {
     return user.avatar || `https://via.placeholder.com/80?text=${encodeURIComponent(user.name.charAt(0).toUpperCase())}`;
   };
 

@@ -1,13 +1,9 @@
 "use client";
 
 import { type ChangeEvent, useEffect, useState } from "react";
-import { readSiteUsersFromStorage, writeSiteUsersToStorage, type SiteUser } from "@/app/lib/site-users";
-import {
-  ELO_REQUESTS_CHANGED_EVENT,
-  readEloRequestsFromStorage,
-  writeEloRequestsToStorage,
-  type EloChangeRequest,
-} from "@/app/lib/elo-requests";
+import { fetchSiteUsers, patchSiteUser } from "@/app/lib/site-users-api";
+import { ELO_REQUESTS_CHANGED_EVENT, type EloChangeRequest } from "@/app/lib/elo-requests";
+import { createEloRequest, fetchEloRequests } from "@/app/lib/elo-requests-api";
 
 type SiteUserSession = {
   id: string;
@@ -78,6 +74,16 @@ export default function UserSettingsWidget() {
   const [pendingEloRequest, setPendingEloRequest] = useState<EloChangeRequest | null>(null);
   const [message, setMessage] = useState("");
 
+  const loadPendingRequest = async (userId: string) => {
+    const requests = await fetchEloRequests();
+    const pending =
+      requests
+        .filter((item) => item.userId === userId && item.status === "pending")
+        .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1))[0] ?? null;
+    setPendingEloRequest(pending);
+    return pending;
+  };
+
   useEffect(() => {
     const updateSession = () => {
       const moderatorRaw = window.localStorage.getItem("moderator-session");
@@ -118,39 +124,46 @@ export default function UserSettingsWidget() {
     }
 
     const timeoutId = setTimeout(() => {
-      const users = readSiteUsersFromStorage();
-      const current = users.find((item) => item.id === session.id);
-      setDisplayName((current?.name ?? session.name).trim());
-      setCountryCode((current?.manualCountryCode ?? current?.country ?? "").toUpperCase());
-      setAvatar(current?.avatar ?? "");
-      const pending =
-        readEloRequestsFromStorage()
-          .filter((item) => item.userId === session.id && item.status === "pending")
-          .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1))[0] ?? null;
-      setPendingEloRequest(pending);
+      fetchSiteUsers()
+        .then((users) => {
+          const current = users.find((item) => item.id === session.id);
+          setDisplayName((current?.name ?? session.name).trim());
+          setCountryCode((current?.manualCountryCode ?? current?.country ?? "").toUpperCase());
+          setAvatar(current?.avatar ?? "");
+          loadPendingRequest(session.id).catch(() => setPendingEloRequest(null));
+        })
+        .catch(() => {
+          setDisplayName(session.name.trim());
+          setCountryCode("");
+          setAvatar("");
+          setPendingEloRequest(null);
+        });
     }, 0);
 
     return () => clearTimeout(timeoutId);
   }, [session]);
 
   useEffect(() => {
-    const updatePending = () => {
+    const updatePending = async () => {
       if (!session) {
         setPendingEloRequest(null);
         return;
       }
-      const pending =
-        readEloRequestsFromStorage()
-          .filter((item) => item.userId === session.id && item.status === "pending")
-          .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1))[0] ?? null;
-      setPendingEloRequest(pending);
+      try {
+        await loadPendingRequest(session.id);
+      } catch {
+        setPendingEloRequest(null);
+      }
     };
-    updatePending();
-    window.addEventListener(ELO_REQUESTS_CHANGED_EVENT, updatePending);
-    window.addEventListener("storage", updatePending);
+    const onUpdatePending = () => {
+      updatePending().catch(() => {});
+    };
+    onUpdatePending();
+    const intervalId = setInterval(onUpdatePending, 15000);
+    window.addEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdatePending);
     return () => {
-      window.removeEventListener(ELO_REQUESTS_CHANGED_EVENT, updatePending);
-      window.removeEventListener("storage", updatePending);
+      clearInterval(intervalId);
+      window.removeEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdatePending);
     };
   }, [session]);
 
@@ -175,7 +188,7 @@ export default function UserSettingsWidget() {
     reader.readAsDataURL(file);
   };
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
     if (!session) {
       return;
     }
@@ -184,18 +197,16 @@ export default function UserSettingsWidget() {
       setMessage("A név megadása kötelező.");
       return;
     }
-    const users = readSiteUsersFromStorage();
-    const nextUsers: SiteUser[] = users.map((item) =>
-      item.id === session.id
-        ? {
-            ...item,
-            name: nextName,
-            manualCountryCode: countryCode || undefined,
-            avatar: avatar || undefined,
-          }
-        : item
-    );
-    writeSiteUsersToStorage(nextUsers);
+    try {
+      await patchSiteUser(session.id, {
+        name: nextName,
+        manualCountryCode: countryCode || undefined,
+        avatar: avatar || undefined,
+      });
+    } catch {
+      setMessage("Nem sikerült menteni a beállításokat.");
+      return;
+    }
     const nextSession: SiteUserSession = {
       ...session,
       name: nextName,
@@ -203,10 +214,11 @@ export default function UserSettingsWidget() {
     window.localStorage.setItem("site-user-session", JSON.stringify(nextSession));
     setSession(nextSession);
     window.dispatchEvent(new Event("site-user-session-changed"));
+    window.dispatchEvent(new Event("site-users-changed"));
     setMessage("Beállítások mentve.");
   };
 
-  const submitEloRequest = () => {
+  const submitEloRequest = async () => {
     if (!session) {
       return;
     }
@@ -220,25 +232,21 @@ export default function UserSettingsWidget() {
       setMessage("Az ELO kérés 0 és 9999 között lehet.");
       return;
     }
-    const existingRequests = readEloRequestsFromStorage();
-    const pending = existingRequests.find((item) => item.userId === session.id && item.status === "pending");
-    if (pending) {
-      setPendingEloRequest(pending);
-      setMessage("Már van függő ELO kérelmed.");
-      return;
+    try {
+      const nextRequest = await createEloRequest({
+        id: `elo_req_${Date.now()}`,
+        userId: session.id,
+        requestedElo: value,
+        createdAt: new Date().toISOString(),
+      });
+      setPendingEloRequest(nextRequest);
+      setRequestedElo("");
+      setMessage("ELO kérelem elküldve.");
+      window.dispatchEvent(new Event(ELO_REQUESTS_CHANGED_EVENT));
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : "Nem sikerült elküldeni az ELO kérelmet.";
+      setMessage(messageText);
     }
-    const nextRequest: EloChangeRequest = {
-      id: `elo_req_${Date.now()}`,
-      userId: session.id,
-      requestedElo: value,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
-    const nextRequests = [nextRequest, ...existingRequests];
-    writeEloRequestsToStorage(nextRequests);
-    setPendingEloRequest(nextRequest);
-    setRequestedElo("");
-    setMessage("ELO kérelem elküldve.");
   };
 
   if (!session) {

@@ -3,13 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { players, type Player } from "../data/players";
 import { type FaceitOverride } from "../lib/faceit-profile";
-import {
-  SITE_USERS_CHANGED_EVENT,
-  readSiteUsersFromStorage,
-  sortUsersByRank,
-  writeSiteUsersToStorage,
-  type SiteUser,
-} from "../lib/site-users";
+import { SITE_USERS_CHANGED_EVENT, sortUsersByRank } from "../lib/site-users";
+import { fetchSiteUsers, patchSiteUser, type PublicSiteUser } from "../lib/site-users-api";
 
 type SelectedPlayer = Player | null;
 type PlayersApiResponse = {
@@ -59,7 +54,7 @@ function countryToFlag(value: string | null | undefined): string {
   return String.fromCodePoint(...code.split("").map((char) => base + char.charCodeAt(0)));
 }
 
-function mapSiteUsersToPlayers(users: SiteUser[]): Player[] {
+function mapSiteUsersToPlayers(users: PublicSiteUser[]): Player[] {
   const rankedUsers = sortUsersByRank(users);
   return rankedUsers.map((user, index) => ({
     rank: index + 1,
@@ -215,7 +210,7 @@ export default function PlayersPage() {
     let isMounted = true;
 
     const refreshUsersFromFaceit = async () => {
-      const currentUsers = readSiteUsersFromStorage();
+      const currentUsers = await fetchSiteUsers();
       if (!isMounted) {
         return;
       }
@@ -255,14 +250,35 @@ export default function PlayersPage() {
         JSON.stringify(currentUsers.map((item) => [item.id, item.faceitElo, item.faceitLevel, item.country, item.avatar])) !==
         JSON.stringify(updatedUsers.map((item) => [item.id, item.faceitElo, item.faceitLevel, item.country, item.avatar]));
       if (changed) {
-        writeSiteUsersToStorage(updatedUsers);
+        await Promise.all(
+          updatedUsers.map(async (item, index) => {
+            const original = currentUsers[index];
+            if (
+              original &&
+              (original.faceitElo !== item.faceitElo ||
+                original.faceitLevel !== item.faceitLevel ||
+                original.country !== item.country ||
+                original.avatar !== item.avatar)
+            ) {
+              await patchSiteUser(item.id, {
+                faceitElo: item.faceitElo,
+                faceitLevel: item.faceitLevel,
+                country: item.country,
+                avatar: item.avatar,
+              });
+            }
+          })
+        );
+        window.dispatchEvent(new Event("site-users-changed"));
       }
       setRegisteredPlayers(mapSiteUsersToPlayers(updatedUsers));
     };
 
-    const handleUsersChanged = () => {
-      const users = readSiteUsersFromStorage();
-      setRegisteredPlayers(mapSiteUsersToPlayers(users));
+    const handleUsersChanged = async () => {
+      try {
+        const users = await fetchSiteUsers();
+        setRegisteredPlayers(mapSiteUsersToPlayers(users));
+      } catch {}
     };
 
     refreshUsersFromFaceit();

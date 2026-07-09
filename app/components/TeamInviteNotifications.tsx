@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { readSiteUsersFromStorage, type SiteUser } from "@/app/lib/site-users";
+import { fetchSiteUsers, type PublicSiteUser } from "@/app/lib/site-users-api";
 import {
   findTeamByMemberId,
   readSiteTeamsFromStorage,
@@ -28,13 +28,13 @@ type PendingInviteView = {
 
 export default function TeamInviteNotifications() {
   const [session, setSession] = useState<SiteUserSession | null>(null);
-  const [users, setUsers] = useState<SiteUser[]>([]);
+  const [users, setUsers] = useState<PublicSiteUser[]>([]);
   const [teams, setTeams] = useState<SiteTeam[]>([]);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const updateState = () => {
+    const updateState = async () => {
       const rawSession = window.localStorage.getItem("site-user-session");
       if (!rawSession) {
         setSession(null);
@@ -47,24 +47,32 @@ export default function TeamInviteNotifications() {
           setSession(null);
         }
       }
-      setUsers(readSiteUsersFromStorage());
+      try {
+        setUsers(await fetchSiteUsers());
+      } catch {
+        setUsers([]);
+      }
       setTeams(readSiteTeamsFromStorage());
       setInvites(readTeamInvitesFromStorage());
     };
 
-    updateState();
-    window.addEventListener("site-user-session-changed", updateState);
-    window.addEventListener("site-users-changed", updateState);
-    window.addEventListener(SITE_TEAMS_CHANGED_EVENT, updateState);
-    window.addEventListener(TEAM_INVITES_CHANGED_EVENT, updateState);
-    window.addEventListener("storage", updateState);
+    const onUpdateState = () => {
+      updateState().catch(() => {});
+    };
+
+    onUpdateState();
+    window.addEventListener("site-user-session-changed", onUpdateState);
+    window.addEventListener("site-users-changed", onUpdateState);
+    window.addEventListener(SITE_TEAMS_CHANGED_EVENT, onUpdateState);
+    window.addEventListener(TEAM_INVITES_CHANGED_EVENT, onUpdateState);
+    window.addEventListener("storage", onUpdateState);
 
     return () => {
-      window.removeEventListener("site-user-session-changed", updateState);
-      window.removeEventListener("site-users-changed", updateState);
-      window.removeEventListener(SITE_TEAMS_CHANGED_EVENT, updateState);
-      window.removeEventListener(TEAM_INVITES_CHANGED_EVENT, updateState);
-      window.removeEventListener("storage", updateState);
+      window.removeEventListener("site-user-session-changed", onUpdateState);
+      window.removeEventListener("site-users-changed", onUpdateState);
+      window.removeEventListener(SITE_TEAMS_CHANGED_EVENT, onUpdateState);
+      window.removeEventListener(TEAM_INVITES_CHANGED_EVENT, onUpdateState);
+      window.removeEventListener("storage", onUpdateState);
     };
   }, []);
 

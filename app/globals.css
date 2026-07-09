@@ -722,6 +722,35 @@ body {
   font-weight: 800;
 }
 
+/* Rank sor színek */
+.rank-row-gold td { background: rgba(255, 215, 0, 0.08); }
+.rank-row-gold .rank-cell { color: #ffd700; font-weight: 900; font-size: 1.1rem; text-shadow: 0 0 8px rgba(255,215,0,0.6); }
+.rank-row-gold .faceit-level-chip { background: #ffd700; color: #111; }
+
+.rank-row-silver td { background: rgba(192, 192, 192, 0.07); }
+.rank-row-silver .rank-cell { color: #c0c0c0; font-weight: 900; font-size: 1.1rem; text-shadow: 0 0 6px rgba(192,192,192,0.5); }
+.rank-row-silver .faceit-level-chip { background: #c0c0c0; color: #111; }
+
+.rank-row-bronze td { background: rgba(205, 127, 50, 0.08); }
+.rank-row-bronze .rank-cell { color: #cd7f32; font-weight: 900; font-size: 1.1rem; text-shadow: 0 0 6px rgba(205,127,50,0.5); }
+.rank-row-bronze .faceit-level-chip { background: #cd7f32; color: #fff; }
+
+.rank-row-red td { background: rgba(206, 41, 57, 0.06); }
+.rank-row-red .rank-cell { color: #ce2939; font-weight: 800; }
+.rank-row-red .faceit-level-chip { background: #ce2939; color: #fff; }
+
+.rank-row-green td { background: rgba(39, 174, 96, 0.06); }
+.rank-row-green .rank-cell { color: #27ae60; font-weight: 800; }
+.rank-row-green .faceit-level-chip { background: #27ae60; color: #fff; }
+
+/* Email homályosítás moderátoroknak */
+.email-blurred {
+  filter: blur(4px);
+  user-select: none;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
 .faceit-elo-cell {
   font-weight: 800;
   color: #d4ecff;

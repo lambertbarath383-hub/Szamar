@@ -82,6 +82,13 @@ function mapSiteUsersToPlayers(users: PublicSiteUser[]): Player[] {
   }));
 }
 
+function getRankRowClass(rank: number, elo: number | null | undefined): string {
+  if (rank === 1) return "rank-row-gold";
+  if (rank === 2) return "rank-row-silver";
+  if (rank === 3) return "rank-row-bronze";
+  return (elo ?? 0) >= 2000 ? "rank-row-red" : "rank-row-green";
+}
+
 export default function PlayersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [playersData, setPlayersData] = useState<Player[]>(
@@ -461,8 +468,8 @@ export default function PlayersPage() {
             </thead>
             <tbody>
               {filteredPlayers.map((player) => (
-                <tr key={`${player.name}-${player.rank}`}>
-                  <td>#{player.rank}</td>
+                <tr key={`${player.name}-${player.rank}`} className={getRankRowClass(player.rank, player.faceitElo)}>
+                  <td className="rank-cell">#{player.rank}</td>
                   <td>
                     <div className="faceit-player-cell">
                       <img src={player.pfp} alt={player.name} className="faceit-player-avatar" />

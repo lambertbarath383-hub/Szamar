@@ -1040,7 +1040,8 @@ export default function AdminPage() {
               return (
                 <li key={request.id}>
                   <span>
-                    <strong>{user?.name ?? "Ismeretlen játékos"}</strong> ({user?.email ?? "N/A"})
+                    <strong>{user?.name ?? "Ismeretlen játékos"}</strong>{" "}
+                    (<span className={isOwner ? undefined : "email-blurred"}>{user?.email ?? "N/A"}</span>)
                     <br />
                     <strong>Kért ELO:</strong> {request.requestedElo} (max 4 számjegy)
                     <br />
@@ -1095,7 +1096,7 @@ export default function AdminPage() {
             {rankedUsers.map((item, index) => (
               <li key={item.id}>
                 <span>
-                  #{index + 1} — {item.name} ({item.email})
+                  #{index + 1} — {item.name} (<span className={isOwner ? undefined : "email-blurred"}>{item.email}</span>)
                   <br />
                   <strong>FACEIT:</strong>{" "}
                   <a href={item.faceitProfileUrl} target="_blank" rel="noreferrer">

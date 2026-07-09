@@ -16,7 +16,7 @@ export default function RootLayout({
       <body>
         <nav className="navbar">
           <div className="navbar-links">
-            <Link href="/">CS2 HUB</Link>
+            <Link href="/">Hungarian Major</Link>
             <Link href="/players">PLAYERS</Link>
             <Link href="/teams">TEAMS</Link>
             <Link href="/matches">MATCHES</Link>

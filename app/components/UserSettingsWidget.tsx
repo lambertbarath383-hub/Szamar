@@ -1,0 +1,300 @@
+"use client";
+
+import { type ChangeEvent, useEffect, useState } from "react";
+import { readSiteUsersFromStorage, writeSiteUsersToStorage, type SiteUser } from "@/app/lib/site-users";
+import {
+  ELO_REQUESTS_CHANGED_EVENT,
+  readEloRequestsFromStorage,
+  writeEloRequestsToStorage,
+  type EloChangeRequest,
+} from "@/app/lib/elo-requests";
+
+type SiteUserSession = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+const EUROPEAN_COUNTRIES: Array<{ code: string; name: string }> = [
+  { code: "AL", name: "Albania" },
+  { code: "AD", name: "Andorra" },
+  { code: "AM", name: "Armenia" },
+  { code: "AT", name: "Austria" },
+  { code: "AZ", name: "Azerbaijan" },
+  { code: "BY", name: "Belarus" },
+  { code: "BE", name: "Belgium" },
+  { code: "BA", name: "Bosnia and Herzegovina" },
+  { code: "BG", name: "Bulgaria" },
+  { code: "HR", name: "Croatia" },
+  { code: "CY", name: "Cyprus" },
+  { code: "CZ", name: "Czechia" },
+  { code: "DK", name: "Denmark" },
+  { code: "EE", name: "Estonia" },
+  { code: "FI", name: "Finland" },
+  { code: "FR", name: "France" },
+  { code: "GE", name: "Georgia" },
+  { code: "DE", name: "Germany" },
+  { code: "GR", name: "Greece" },
+  { code: "HU", name: "Hungary" },
+  { code: "IS", name: "Iceland" },
+  { code: "IE", name: "Ireland" },
+  { code: "IT", name: "Italy" },
+  { code: "XK", name: "Kosovo" },
+  { code: "LV", name: "Latvia" },
+  { code: "LI", name: "Liechtenstein" },
+  { code: "LT", name: "Lithuania" },
+  { code: "LU", name: "Luxembourg" },
+  { code: "MT", name: "Malta" },
+  { code: "MD", name: "Moldova" },
+  { code: "MC", name: "Monaco" },
+  { code: "ME", name: "Montenegro" },
+  { code: "NL", name: "Netherlands" },
+  { code: "MK", name: "North Macedonia" },
+  { code: "NO", name: "Norway" },
+  { code: "PL", name: "Poland" },
+  { code: "PT", name: "Portugal" },
+  { code: "RO", name: "Romania" },
+  { code: "RU", name: "Russia" },
+  { code: "SM", name: "San Marino" },
+  { code: "RS", name: "Serbia" },
+  { code: "SK", name: "Slovakia" },
+  { code: "SI", name: "Slovenia" },
+  { code: "ES", name: "Spain" },
+  { code: "SE", name: "Sweden" },
+  { code: "CH", name: "Switzerland" },
+  { code: "TR", name: "Turkey" },
+  { code: "UA", name: "Ukraine" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "VA", name: "Vatican City" },
+];
+
+export default function UserSettingsWidget() {
+  const [session, setSession] = useState<SiteUserSession | null>(null);
+  const [open, setOpen] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [countryCode, setCountryCode] = useState("");
+  const [avatar, setAvatar] = useState("");
+  const [requestedElo, setRequestedElo] = useState("");
+  const [pendingEloRequest, setPendingEloRequest] = useState<EloChangeRequest | null>(null);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const updateSession = () => {
+      const moderatorRaw = window.localStorage.getItem("moderator-session");
+      if (moderatorRaw) {
+        setSession(null);
+        setOpen(false);
+        return;
+      }
+      const raw = window.localStorage.getItem("site-user-session");
+      if (!raw) {
+        setSession(null);
+        setOpen(false);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw) as SiteUserSession;
+        setSession(parsed && parsed.id ? parsed : null);
+      } catch {
+        window.localStorage.removeItem("site-user-session");
+        setSession(null);
+      }
+    };
+
+    updateSession();
+    window.addEventListener("site-user-session-changed", updateSession);
+    window.addEventListener("moderator-session-changed", updateSession);
+    window.addEventListener("storage", updateSession);
+    return () => {
+      window.removeEventListener("site-user-session-changed", updateSession);
+      window.removeEventListener("moderator-session-changed", updateSession);
+      window.removeEventListener("storage", updateSession);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      const users = readSiteUsersFromStorage();
+      const current = users.find((item) => item.id === session.id);
+      setDisplayName((current?.name ?? session.name).trim());
+      setCountryCode((current?.manualCountryCode ?? current?.country ?? "").toUpperCase());
+      setAvatar(current?.avatar ?? "");
+      const pending =
+        readEloRequestsFromStorage()
+          .filter((item) => item.userId === session.id && item.status === "pending")
+          .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1))[0] ?? null;
+      setPendingEloRequest(pending);
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
+  }, [session]);
+
+  useEffect(() => {
+    const updatePending = () => {
+      if (!session) {
+        setPendingEloRequest(null);
+        return;
+      }
+      const pending =
+        readEloRequestsFromStorage()
+          .filter((item) => item.userId === session.id && item.status === "pending")
+          .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1))[0] ?? null;
+      setPendingEloRequest(pending);
+    };
+    updatePending();
+    window.addEventListener(ELO_REQUESTS_CHANGED_EVENT, updatePending);
+    window.addEventListener("storage", updatePending);
+    return () => {
+      window.removeEventListener(ELO_REQUESTS_CHANGED_EVENT, updatePending);
+      window.removeEventListener("storage", updatePending);
+    };
+  }, [session]);
+
+  const onImagePick = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setMessage("Csak képfájl tölthető fel.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = typeof reader.result === "string" ? reader.result : "";
+      setAvatar(value);
+      setMessage("");
+    };
+    reader.onerror = () => {
+      setMessage("Nem sikerült beolvasni a képet.");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveSettings = () => {
+    if (!session) {
+      return;
+    }
+    const nextName = displayName.trim();
+    if (!nextName) {
+      setMessage("A név megadása kötelező.");
+      return;
+    }
+    const users = readSiteUsersFromStorage();
+    const nextUsers: SiteUser[] = users.map((item) =>
+      item.id === session.id
+        ? {
+            ...item,
+            name: nextName,
+            manualCountryCode: countryCode || undefined,
+            avatar: avatar || undefined,
+          }
+        : item
+    );
+    writeSiteUsersToStorage(nextUsers);
+    const nextSession: SiteUserSession = {
+      ...session,
+      name: nextName,
+    };
+    window.localStorage.setItem("site-user-session", JSON.stringify(nextSession));
+    setSession(nextSession);
+    window.dispatchEvent(new Event("site-user-session-changed"));
+    setMessage("Beállítások mentve.");
+  };
+
+  const submitEloRequest = () => {
+    if (!session) {
+      return;
+    }
+    const normalized = requestedElo.trim();
+    if (!/^\d{1,4}$/.test(normalized)) {
+      setMessage("Az ELO kérés 1-4 számjegy lehet.");
+      return;
+    }
+    const value = Number.parseInt(normalized, 10);
+    if (Number.isNaN(value) || value < 0 || value > 9999) {
+      setMessage("Az ELO kérés 0 és 9999 között lehet.");
+      return;
+    }
+    const existingRequests = readEloRequestsFromStorage();
+    const pending = existingRequests.find((item) => item.userId === session.id && item.status === "pending");
+    if (pending) {
+      setPendingEloRequest(pending);
+      setMessage("Már van függő ELO kérelmed.");
+      return;
+    }
+    const nextRequest: EloChangeRequest = {
+      id: `elo_req_${Date.now()}`,
+      userId: session.id,
+      requestedElo: value,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    const nextRequests = [nextRequest, ...existingRequests];
+    writeEloRequestsToStorage(nextRequests);
+    setPendingEloRequest(nextRequest);
+    setRequestedElo("");
+    setMessage("ELO kérelem elküldve.");
+  };
+
+  if (!session) {
+    return null;
+  }
+
+  return (
+    <div className="user-settings-widget">
+      <button type="button" className="user-settings-toggle" onClick={() => setOpen((current) => !current)}>
+        Beállítások
+      </button>
+      {open && (
+        <div className="user-settings-panel">
+          <p className="user-settings-title">Játékos beállítások</p>
+          <input
+            className="faceit-linker-input"
+            placeholder="Megjelenített név"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+          />
+          <select className="faceit-linker-input" value={countryCode} onChange={(event) => setCountryCode(event.target.value)}>
+            <option value="">Ország kiválasztása</option>
+            {EUROPEAN_COUNTRIES.map((country) => (
+              <option key={country.code} value={country.code}>
+                {country.name}
+              </option>
+            ))}
+          </select>
+          <input className="faceit-linker-input" type="file" accept="image/*" onChange={onImagePick} />
+          {avatar && <img src={avatar} alt="Profilkép előnézet" className="user-settings-preview" />}
+          <div className="faceit-linker-row">
+            <input
+              className="faceit-linker-input"
+              placeholder="Kérelmezett FACEIT ELO (max 4 számjegy)"
+              value={requestedElo}
+              onChange={(event) => setRequestedElo(event.target.value.replace(/\D/g, "").slice(0, 4))}
+              disabled={Boolean(pendingEloRequest)}
+            />
+            <button
+              type="button"
+              className="faceit-linker-btn secondary"
+              onClick={submitEloRequest}
+              disabled={Boolean(pendingEloRequest)}
+            >
+              ELO kérelem
+            </button>
+          </div>
+          {pendingEloRequest && (
+            <p className="faceit-linker-message">Függő ELO kérelmed: {pendingEloRequest.requestedElo}</p>
+          )}
+          <button type="button" className="faceit-linker-btn" onClick={saveSettings}>
+            Mentés
+          </button>
+          {message && <p className="faceit-linker-message">{message}</p>}
+        </div>
+      )}
+    </div>
+  );
+}

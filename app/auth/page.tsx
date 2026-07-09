@@ -213,20 +213,39 @@ export default function AuthPage() {
         }),
       });
 
-      const payload = (await response.json()) as { ok?: boolean; message?: string };
+      const payload = (await response.json()) as { ok?: boolean; isOwner?: boolean; message?: string };
       if (!response.ok || !payload.ok) {
         setMessage(payload.message ?? "Hibás moderátor jelszó.");
         return;
       }
 
-      const nextSession = { name: moderatorName.trim() || "Moderátor" };
+      const isOwner = payload.isOwner === true;
+      const sessionName = moderatorName.trim() || "Moderátor";
+      const nextSession = { name: sessionName, isOwner };
       window.localStorage.setItem("moderator-session", JSON.stringify(nextSession));
-      window.dispatchEvent(
-        new CustomEvent("moderator-session-changed", {
-          detail: { action: "login", name: nextSession.name },
-        })
-      );
-      setMessage(`Moderátor bejelentkezett: ${nextSession.name}`);
+
+      if (isOwner) {
+        // Owner login: piros "ismeretlen felhasználó" értesítés mindenkinek
+        fetch("/api/moderator-actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: `mod_action_${Date.now()}`,
+            text: "ismeretlen felhasználó bejelentkezett",
+            createdAt: new Date().toISOString(),
+            isError: true,
+          }),
+        }).catch(() => {});
+        // Lokális esemény (csak saját böngésző, de a toast a polling fogja mutatni hamarosan)
+        window.dispatchEvent(new CustomEvent("moderator-session-changed", { detail: {} }));
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("moderator-session-changed", {
+            detail: { action: "login", name: sessionName },
+          })
+        );
+      }
+      setMessage(`Bejelentkezve: ${sessionName}`);
       setModeratorPassword("");
     } finally {
       setIsLoading(false);

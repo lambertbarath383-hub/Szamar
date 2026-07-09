@@ -70,6 +70,12 @@ export default function AdminPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isModeratorVerified, setIsModeratorVerified] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [newModeratorPassword, setNewModeratorPassword] = useState("");
+  const [newAdminKey, setNewAdminKey] = useState("");
+  const [configMessage, setConfigMessage] = useState("");
+  const [currentModeratorPassword, setCurrentModeratorPassword] = useState("");
+  const [currentAdminKey, setCurrentAdminKey] = useState("");
 
   const loadSiteUsers = async () => {
     const users = await fetchSiteUsers();
@@ -84,6 +90,27 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
+    // Ellenőrzés: owner-e a bejelentkezett moderátor
+    const rawSession = typeof window !== "undefined" ? window.localStorage.getItem("moderator-session") : null;
+    if (rawSession) {
+      try {
+        const parsed = JSON.parse(rawSession) as { name?: string; isOwner?: boolean };
+        if (parsed.isOwner === true) {
+          setIsOwner(true);
+          // Owner: töltse be az aktuális config értékeket
+          fetch("/api/moderator/config?ownerName=Szamar19&ownerPassword=123")
+            .then((r) => r.json() as Promise<{ ok?: boolean; config?: { moderatorPassword?: string; adminKey?: string } }>)
+            .then((data) => {
+              if (data.ok && data.config) {
+                setCurrentModeratorPassword(data.config.moderatorPassword ?? "");
+                setCurrentAdminKey(data.config.adminKey ?? "");
+              }
+            })
+            .catch(() => {});
+        }
+      } catch {}
+    }
+
     const loadAdminState = async () => {
       setAdminKey(window.localStorage.getItem("admin-key") ?? "");
       try {
@@ -96,10 +123,10 @@ export default function AdminPage() {
       } catch {}
       setCustomMatches(readCustomMatchEntriesFromStorage());
       setCustomBrackets(readCustomBracketsFromStorage());
-      loadSiteUsers().catch(() => setSiteUsers([]));
+      loadSiteUsers().catch(() => {});
       setSiteTeams(readSiteTeamsFromStorage());
       setTeamInvites(readTeamInvitesFromStorage());
-      loadEloRequests().catch(() => setEloRequests([]));
+      loadEloRequests().catch(() => {});
     };
 
     const timeoutId = setTimeout(() => {
@@ -138,6 +165,7 @@ export default function AdminPage() {
         body: JSON.stringify({
           name: "admin",
           password: normalizedAdminKey,
+          mode: "adminKey",
         }),
         signal: controller.signal,
       });
@@ -798,6 +826,40 @@ export default function AdminPage() {
     }
   };
 
+  const saveOwnerConfig = async () => {
+    setConfigMessage("");
+    if (!newModeratorPassword && !newAdminKey) {
+      setConfigMessage("Adj meg legalább egy új értéket.");
+      return;
+    }
+    try {
+      const body: Record<string, string> = {
+        ownerName: "Szamar19",
+        ownerPassword: "123",
+      };
+      if (newModeratorPassword.trim()) body.moderatorPassword = newModeratorPassword.trim();
+      if (newAdminKey.trim()) body.adminKey = newAdminKey.trim();
+
+      const response = await fetch("/api/moderator/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !payload.ok) {
+        setConfigMessage(payload.message ?? "Hiba a mentésnél.");
+        return;
+      }
+      if (newModeratorPassword.trim()) setCurrentModeratorPassword(newModeratorPassword.trim());
+      if (newAdminKey.trim()) setCurrentAdminKey(newAdminKey.trim());
+      setNewModeratorPassword("");
+      setNewAdminKey("");
+      setConfigMessage("Beállítások mentve.");
+    } catch {
+      setConfigMessage("Hálózati hiba.");
+    }
+  };
+
   return (
     <main className="container">
       <h1 className="title">ADMIN PANEL</h1>
@@ -805,6 +867,36 @@ export default function AdminPage() {
         <h2>Moderátor felület</h2>
         <p>Ugyanazzal a kulccsal (moderátor jelszó) tudsz meccset és bracketet kezelni.</p>
       </div>
+
+      {isOwner && (
+        <details className="faceit-linker-panel" style={{ marginTop: "14px", border: "2px solid #e74c3c" }} open>
+          <summary style={{ cursor: "pointer", fontWeight: 700, color: "#e74c3c" }}>🔑 Tulajdonos beállítások</summary>
+          <div style={{ marginTop: "12px" }}>
+            <p style={{ marginBottom: "8px", fontSize: "13px", opacity: 0.8 }}>
+              Jelenlegi moderátor jelszó: <strong>{currentModeratorPassword || "—"}</strong>
+              &nbsp;|&nbsp;Jelenlegi admin kulcs: <strong>{currentAdminKey || "—"}</strong>
+            </p>
+            <div className="faceit-linker-row">
+              <input
+                className="faceit-linker-input"
+                placeholder="Új moderátor belépési jelszó"
+                value={newModeratorPassword}
+                onChange={(e) => setNewModeratorPassword(e.target.value)}
+              />
+              <input
+                className="faceit-linker-input"
+                placeholder="Új admin kulcs"
+                value={newAdminKey}
+                onChange={(e) => setNewAdminKey(e.target.value)}
+              />
+              <button type="button" className="faceit-linker-btn" onClick={saveOwnerConfig}>
+                Mentés
+              </button>
+            </div>
+            {configMessage && <p className="faceit-linker-message" style={{ color: configMessage.includes("mentve") ? "green" : "#e74c3c" }}>{configMessage}</p>}
+          </div>
+        </details>
+      )}
 
       <div className="faceit-linker-panel" style={{ marginTop: "18px" }}>
         <div className="faceit-linker-row">

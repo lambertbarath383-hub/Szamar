@@ -116,11 +116,11 @@ export default function NavbarAuthControl() {
       try {
         const response = await fetch(`/api/moderator-actions?since=${encodeURIComponent(lastSeenAt)}`, { cache: "no-store" });
         if (!response.ok) return;
-        const payload = (await response.json()) as { ok?: boolean; data?: ModeratorActionPayload[] };
+        const payload = (await response.json()) as { ok?: boolean; data?: Array<{ id: string; text: string; createdAt: string; isError?: boolean }> };
         if (!payload.ok || !Array.isArray(payload.data)) return;
         for (const entry of payload.data) {
           if (entry?.text) {
-            showNotification(entry.text);
+            showNotification(entry.text, entry.isError === true);
           }
         }
         if (payload.data.length > 0) {

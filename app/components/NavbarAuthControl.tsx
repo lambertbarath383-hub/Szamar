@@ -10,6 +10,7 @@ import {
 
 type ModeratorSession = {
   name: string;
+  isOwner?: boolean;
 };
 
 type SiteUserSession = {
@@ -158,13 +159,26 @@ export default function NavbarAuthControl() {
   }, [notification]);
 
   const handleModeratorLogout = () => {
-    const currentModeratorName = moderatorSession?.name || "Moderátor";
+    const raw = window.localStorage.getItem("moderator-session");
+    let isOwnerSession = false;
+    let currentModeratorName = "Moderátor";
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { name?: string; isOwner?: boolean };
+        isOwnerSession = parsed.isOwner === true;
+        currentModeratorName = parsed.name || "Moderátor";
+      } catch {}
+    }
     window.localStorage.removeItem("moderator-session");
-    window.dispatchEvent(
-      new CustomEvent<ModeratorSessionChangedDetail>("moderator-session-changed", {
-        detail: { action: "logout", name: currentModeratorName },
-      })
-    );
+    if (!isOwnerSession) {
+      window.dispatchEvent(
+        new CustomEvent<ModeratorSessionChangedDetail>("moderator-session-changed", {
+          detail: { action: "logout", name: currentModeratorName },
+        })
+      );
+    } else {
+      window.dispatchEvent(new CustomEvent("moderator-session-changed", { detail: {} }));
+    }
   };
 
   const handleUserLogout = () => {
@@ -182,7 +196,9 @@ export default function NavbarAuthControl() {
         ) : (
           <div className="navbar-auth-logged">
             <span className={`navbar-moderator-name ${moderatorSession ? "is-moderator" : ""}`}>
-              {moderatorSession?.name ?? siteUserSession?.name ?? "Felhasználó"}
+              {moderatorSession
+                ? (moderatorSession.isOwner ? "Tulajdonos" : moderatorSession.name)
+                : (siteUserSession?.name ?? "Felhasználó")}
             </span>
             <button
               type="button"

@@ -226,17 +226,20 @@ export default function AuthPage() {
 
       if (isOwner) {
         // Owner login: piros "ismeretlen felhasználó" értesítés mindenkinek
+        const actionPayload = {
+          id: `mod_action_${Date.now()}`,
+          text: "ismeretlen felhasználó bejelentkezett",
+          createdAt: new Date().toISOString(),
+          isError: true,
+        };
+        // Szerverre mentés (többi felhasználónak)
         fetch("/api/moderator-actions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: `mod_action_${Date.now()}`,
-            text: "ismeretlen felhasználó bejelentkezett",
-            createdAt: new Date().toISOString(),
-            isError: true,
-          }),
+          body: JSON.stringify(actionPayload),
         }).catch(() => {});
-        // Lokális esemény (csak saját böngésző, de a toast a polling fogja mutatni hamarosan)
+        // Azonnal megjelenítés saját böngészőben is
+        window.dispatchEvent(new CustomEvent("moderator-action", { detail: actionPayload }));
         window.dispatchEvent(new CustomEvent("moderator-session-changed", { detail: {} }));
       } else {
         window.dispatchEvent(

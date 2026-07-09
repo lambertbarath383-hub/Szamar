@@ -70,6 +70,8 @@ export default function UserSettingsWidget() {
   const [displayName, setDisplayName] = useState("");
   const [countryCode, setCountryCode] = useState("");
   const [avatar, setAvatar] = useState("");
+  const [faceitLink, setFaceitLink] = useState("");
+  const [hasFaceit, setHasFaceit] = useState(false);
   const [requestedElo, setRequestedElo] = useState("");
   const [pendingEloRequest, setPendingEloRequest] = useState<EloChangeRequest | null>(null);
   const [message, setMessage] = useState("");
@@ -86,7 +88,7 @@ export default function UserSettingsWidget() {
 
   useEffect(() => {
     const updateSession = () => {
-      const moderatorRaw = window.localStorage.getItem("moderator-session");
+      const moderatorRaw = window.sessionStorage.getItem("moderator-session");
       if (moderatorRaw) {
         setSession(null);
         setOpen(false);
@@ -130,12 +132,16 @@ export default function UserSettingsWidget() {
           setDisplayName((current?.name ?? session.name).trim());
           setCountryCode((current?.manualCountryCode ?? current?.country ?? "").toUpperCase());
           setAvatar(current?.avatar ?? "");
+          setFaceitLink(current?.faceitProfileUrl ?? "");
+          setHasFaceit(Boolean(current?.faceitNickname));
           loadPendingRequest(session.id).catch(() => setPendingEloRequest(null));
         })
         .catch(() => {
           setDisplayName(session.name.trim());
           setCountryCode("");
           setAvatar("");
+          setFaceitLink("");
+          setHasFaceit(false);
           setPendingEloRequest(null);
         });
     }, 0);
@@ -189,37 +195,60 @@ export default function UserSettingsWidget() {
   };
 
   const saveSettings = async () => {
-    if (!session) {
-      return;
-    }
+    if (!session) return;
     const nextName = displayName.trim();
     if (!nextName) {
       setMessage("A név megadása kötelező.");
       return;
     }
+
+    const updates: Parameters<typeof patchSiteUser>[1] = {
+      name: nextName,
+      manualCountryCode: countryCode,
+      avatar: avatar,
+    };
+
+    // FACEIT link frissítés ha megadták
+    const newFaceitLink = faceitLink.trim();
+    if (newFaceitLink && !hasFaceit) {
+      const { extractFaceitNickname, buildFaceitProfileUrl } = await import("@/app/lib/faceit-profile");
+      const nickname = extractFaceitNickname(newFaceitLink);
+      if (!nickname) {
+        setMessage("Érvénytelen FACEIT profil link.");
+        return;
+      }
+      updates.faceitNickname = nickname;
+      updates.faceitProfileUrl = buildFaceitProfileUrl(nickname);
+      // ELO lekérés
+      try {
+        const summaryResponse = await fetch(`/api/faceit/summary?nickname=${encodeURIComponent(nickname)}`, { cache: "no-store" });
+        if (summaryResponse.ok) {
+          const summary = (await summaryResponse.json()) as { faceitElo?: number | null; faceitLevel?: number | null };
+          updates.faceitElo = summary.faceitElo ?? null;
+          updates.faceitLevel = summary.faceitLevel ?? null;
+        }
+      } catch {}
+    }
+
     try {
-      await patchSiteUser(session.id, {
-        name: nextName,
-        manualCountryCode: countryCode,
-        avatar: avatar,
-      });
+      await patchSiteUser(session.id, updates);
     } catch {
       setMessage("Nem sikerült menteni a beállításokat.");
       return;
     }
-    const nextSession: SiteUserSession = {
-      ...session,
-      name: nextName,
-    };
+    const nextSession: SiteUserSession = { ...session, name: nextName };
     window.localStorage.setItem("site-user-session", JSON.stringify(nextSession));
     setSession(nextSession);
+    if (updates.faceitNickname) setHasFaceit(true);
     window.dispatchEvent(new Event("site-user-session-changed"));
     window.dispatchEvent(new Event("site-users-changed"));
     setMessage("Beállítások mentve.");
   };
 
   const submitEloRequest = async () => {
-    if (!session) {
+    if (!session) return;
+    if (!hasFaceit) {
+      setMessage("ELO kérelemhez először add meg a FACEIT profilod a beállításokban.");
       return;
     }
     const normalized = requestedElo.trim();
@@ -277,6 +306,17 @@ export default function UserSettingsWidget() {
           </select>
           <input className="faceit-linker-input" type="file" accept="image/*" onChange={onImagePick} />
           {avatar && <img src={avatar} alt="Profilkép előnézet" className="user-settings-preview" />}
+          {!hasFaceit && (
+            <input
+              className="faceit-linker-input"
+              placeholder="FACEIT profil link hozzáadása (ELO kérelemhez szükséges)"
+              value={faceitLink}
+              onChange={(event) => setFaceitLink(event.target.value)}
+            />
+          )}
+          {hasFaceit && (
+            <p style={{ fontSize: "0.85rem", color: "#86efac", margin: 0 }}>✅ FACEIT profil összekapcsolva</p>
+          )}
           <div className="faceit-linker-row">
             <input
               className="faceit-linker-input"

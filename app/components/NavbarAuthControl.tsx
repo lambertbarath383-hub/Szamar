@@ -17,10 +17,12 @@ type SiteUserSession = {
   name: string;
 };
 
+type NotificationKind = "action" | "login" | "logout" | "error";
+
 type ModeratorNotification = {
   id: number;
   text: string;
-  error?: boolean;
+  kind: NotificationKind;
 };
 
 type ModeratorSessionChangedDetail = {
@@ -34,18 +36,14 @@ export default function NavbarAuthControl() {
   const [notification, setNotification] = useState<ModeratorNotification | null>(null);
   const [notificationLeaving, setNotificationLeaving] = useState(false);
 
-  const showNotification = (text: string, error = false) => {
+  const showNotification = (text: string, kind: NotificationKind = "action") => {
     setNotificationLeaving(false);
-    setNotification({
-      id: Date.now(),
-      text,
-      error,
-    });
+    setNotification({ id: Date.now(), text, kind });
   };
 
   useEffect(() => {
     const updateSessions = () => {
-      const rawModerator = window.localStorage.getItem("moderator-session");
+      const rawModerator = window.sessionStorage.getItem("moderator-session");
       if (!rawModerator) {
         setModeratorSession(null);
       } else {
@@ -53,7 +51,7 @@ export default function NavbarAuthControl() {
           const parsed = JSON.parse(rawModerator) as ModeratorSession;
           setModeratorSession(parsed && parsed.name ? parsed : null);
         } catch {
-          window.localStorage.removeItem("moderator-session");
+          window.sessionStorage.removeItem("moderator-session");
           setModeratorSession(null);
         }
       }
@@ -77,17 +75,18 @@ export default function NavbarAuthControl() {
       updateSessions();
 
       if (customEvent.detail?.action === "login" && customEvent.detail.name) {
-        showNotification(`${customEvent.detail.name} web moderator\nbejelentkezett`);
+        showNotification(`${customEvent.detail.name} web moderator\nbejelentkezett`, "login");
       }
       if (customEvent.detail?.action === "logout" && customEvent.detail.name) {
-        showNotification(`${customEvent.detail.name} web moderator\nkijelentkezett`);
+        showNotification(`${customEvent.detail.name} web moderator\nkijelentkezett`, "logout");
       }
     };
 
     const onModeratorAction = (event: Event) => {
-      const customEvent = event as CustomEvent<ModeratorActionPayload>;
+      const customEvent = event as CustomEvent<ModeratorActionPayload & { isError?: boolean }>;
       if (customEvent.detail?.text) {
-        showNotification(customEvent.detail.text);
+        const kind: NotificationKind = customEvent.detail.isError ? "error" : "action";
+        showNotification(customEvent.detail.text, kind);
       }
     };
 
@@ -98,9 +97,10 @@ export default function NavbarAuthControl() {
         return;
       }
       try {
-        const payload = JSON.parse(storageEvent.newValue) as ModeratorActionPayload;
+        const payload = JSON.parse(storageEvent.newValue) as ModeratorActionPayload & { isError?: boolean };
         if (payload?.text) {
-          showNotification(payload.text);
+          const kind: NotificationKind = payload.isError ? "error" : "action";
+          showNotification(payload.text, kind);
         }
       } catch {}
     };
@@ -117,11 +117,15 @@ export default function NavbarAuthControl() {
       try {
         const response = await fetch(`/api/moderator-actions?since=${encodeURIComponent(lastSeenAt)}`, { cache: "no-store" });
         if (!response.ok) return;
-        const payload = (await response.json()) as { ok?: boolean; data?: Array<{ id: string; text: string; createdAt: string; isError?: boolean }> };
+        const payload = (await response.json()) as { ok?: boolean; data?: Array<{ id: string; text: string; createdAt: string; isError?: boolean; kind?: string }> };
         if (!payload.ok || !Array.isArray(payload.data)) return;
         for (const entry of payload.data) {
           if (entry?.text) {
-            showNotification(entry.text, entry.isError === true);
+            const kind: NotificationKind =
+              entry.kind === "login" ? "login" :
+              entry.kind === "logout" ? "logout" :
+              entry.isError ? "error" : "action";
+            showNotification(entry.text, kind);
           }
         }
         if (payload.data.length > 0) {
@@ -159,7 +163,7 @@ export default function NavbarAuthControl() {
   }, [notification]);
 
   const handleModeratorLogout = () => {
-    const raw = window.localStorage.getItem("moderator-session");
+    const raw = window.sessionStorage.getItem("moderator-session");
     let isOwnerSession = false;
     let currentModeratorName = "Moderátor";
     if (raw) {
@@ -169,8 +173,20 @@ export default function NavbarAuthControl() {
         currentModeratorName = parsed.name || "Moderátor";
       } catch {}
     }
-    window.localStorage.removeItem("moderator-session");
+    window.sessionStorage.removeItem("moderator-session");
     if (!isOwnerSession) {
+      // Szerveres logout log
+      const actionPayload = {
+        id: `mod_action_${Date.now()}`,
+        text: `${currentModeratorName} web moderator\nkijelentkezett`,
+        createdAt: new Date().toISOString(),
+        kind: "logout",
+      };
+      fetch("/api/moderator-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(actionPayload),
+      }).catch(() => {});
       window.dispatchEvent(
         new CustomEvent<ModeratorSessionChangedDetail>("moderator-session-changed", {
           detail: { action: "logout", name: currentModeratorName },
@@ -185,6 +201,10 @@ export default function NavbarAuthControl() {
     window.localStorage.removeItem("site-user-session");
     window.dispatchEvent(new Event("site-user-session-changed"));
   };
+
+  const toastClass = notification
+    ? `moderator-toast ${notification.kind === "error" || notification.kind === "logout" ? "error" : notification.kind === "login" ? "login" : ""} ${notificationLeaving ? "leaving" : ""}`.trim()
+    : "";
 
   return (
     <>
@@ -212,10 +232,7 @@ export default function NavbarAuthControl() {
       </div>
 
       {notification && (
-        <div
-          key={notification.id}
-          className={`moderator-toast ${notification.error ? "error" : ""} ${notificationLeaving ? "leaving" : ""}`}
-        >
+        <div key={notification.id} className={toastClass}>
           <div className="moderator-toast-text">{notification.text}</div>
           <div className="moderator-toast-progress" />
         </div>

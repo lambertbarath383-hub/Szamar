@@ -39,10 +39,8 @@ export default function AuthPage() {
   );
 
   const isModeratorSessionActive = () => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    return Boolean(window.localStorage.getItem("moderator-session"));
+    if (typeof window === "undefined") return false;
+    return Boolean(window.sessionStorage.getItem("moderator-session"));
   };
 
   const isUserSessionActive = () => {
@@ -64,8 +62,8 @@ export default function AuthPage() {
     const confirmPassword = registerConfirmPassword;
     const faceitInput = registerFaceitLink.trim();
 
-    if (!name || !email || !password || !confirmPassword || !faceitInput) {
-      setMessage("Minden mező kitöltése kötelező.");
+    if (!name || !email || !password || !confirmPassword) {
+      setMessage("A név, e-mail és jelszó megadása kötelező.");
       return;
     }
     if (password !== confirmPassword) {
@@ -73,37 +71,45 @@ export default function AuthPage() {
       return;
     }
 
-    const nickname = extractFaceitNickname(faceitInput);
-    if (!nickname) {
-      setMessage("Érvénytelen FACEIT profil link.");
-      return;
+    let nickname = "";
+    let faceitProfileUrl = "";
+    if (faceitInput) {
+      const extracted = extractFaceitNickname(faceitInput);
+      if (!extracted) {
+        setMessage("Érvénytelen FACEIT profil link.");
+        return;
+      }
+      nickname = extracted;
+      faceitProfileUrl = buildFaceitProfileUrl(nickname);
     }
 
     setIsLoading(true);
     try {
-      let faceitElo: number | null = null;
+      let faceitElo: number | null = faceitInput ? null : 1000;
       let faceitLevel: number | null = null;
       let country: string | undefined;
       let avatar: string | undefined;
-      try {
-        const summaryResponse = await fetch(`/api/faceit/summary?nickname=${encodeURIComponent(nickname)}`, {
-          cache: "no-store",
-        });
-        if (summaryResponse.ok) {
-          const summary = (await summaryResponse.json()) as FaceitSummaryResponse;
-          faceitElo = summary.faceitElo ?? null;
-          faceitLevel = summary.faceitLevel ?? null;
-          country = summary.country ?? undefined;
-          avatar = summary.avatar ?? undefined;
-        }
-      } catch {}
+      if (nickname) {
+        try {
+          const summaryResponse = await fetch(`/api/faceit/summary?nickname=${encodeURIComponent(nickname)}`, {
+            cache: "no-store",
+          });
+          if (summaryResponse.ok) {
+            const summary = (await summaryResponse.json()) as FaceitSummaryResponse;
+            faceitElo = summary.faceitElo ?? null;
+            faceitLevel = summary.faceitLevel ?? null;
+            country = summary.country ?? undefined;
+            avatar = summary.avatar ?? undefined;
+          }
+        } catch {}
+      }
 
       const nextUser: SiteUser = {
         id: `user_${Date.now()}`,
         name,
         email,
         password,
-        faceitProfileUrl: buildFaceitProfileUrl(nickname),
+        faceitProfileUrl,
         faceitNickname: nickname,
         faceitElo,
         faceitLevel,
@@ -222,7 +228,7 @@ export default function AuthPage() {
       const isOwner = payload.isOwner === true;
       const sessionName = moderatorName.trim() || "Moderátor";
       const nextSession = { name: sessionName, isOwner };
-      window.localStorage.setItem("moderator-session", JSON.stringify(nextSession));
+      window.sessionStorage.setItem("moderator-session", JSON.stringify(nextSession));
 
       if (isOwner) {
         // Owner login: piros "ismeretlen felhasználó" értesítés mindenkinek
@@ -232,16 +238,26 @@ export default function AuthPage() {
           createdAt: new Date().toISOString(),
           isError: true,
         };
-        // Szerverre mentés (többi felhasználónak)
         fetch("/api/moderator-actions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(actionPayload),
         }).catch(() => {});
-        // Azonnal megjelenítés saját böngészőben is
         window.dispatchEvent(new CustomEvent("moderator-action", { detail: actionPayload }));
         window.dispatchEvent(new CustomEvent("moderator-session-changed", { detail: {} }));
       } else {
+        // Normál moderátor login: kék értesítés mindenkinek
+        const actionPayload = {
+          id: `mod_action_${Date.now()}`,
+          text: `${sessionName} web moderator\nbejelentkezett`,
+          createdAt: new Date().toISOString(),
+          kind: "login",
+        };
+        fetch("/api/moderator-actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(actionPayload),
+        }).catch(() => {});
         window.dispatchEvent(
           new CustomEvent("moderator-session-changed", {
             detail: { action: "login", name: sessionName },
@@ -409,7 +425,7 @@ export default function AuthPage() {
             <div className="faceit-linker-row" style={{ marginTop: "10px" }}>
               <input
                 className="faceit-linker-input"
-                placeholder="FACEIT profil link (kötelező)"
+                placeholder="FACEIT profil link (nem kötelező, de ELO kérelemhez szükséges)"
                 value={registerFaceitLink}
                 onChange={(event) => setRegisterFaceitLink(event.target.value)}
               />

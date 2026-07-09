@@ -916,6 +916,18 @@ body {
   animation: moderator-toast-out 0.35s ease-in forwards;
 }
 
+.moderator-toast.login {
+  border-color: #3b82f6;
+  background: #0f1f3d;
+  color: #bfdbfe;
+}
+
+.moderator-toast.logout {
+  border-color: #ef4444;
+  background: #450a0a;
+  color: #fecaca;
+}
+
 .moderator-toast.error {
   border-color: #ef4444;
   background: #450a0a;

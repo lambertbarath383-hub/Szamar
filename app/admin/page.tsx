@@ -91,7 +91,7 @@ export default function AdminPage() {
 
   const getModeratorName = (): string => {
     if (typeof window === "undefined") return "Moderátor";
-    const raw = window.localStorage.getItem("moderator-session");
+    const raw = window.sessionStorage.getItem("moderator-session");
     if (!raw) return "Moderátor";
     try {
       const parsed = JSON.parse(raw) as { name?: string; isOwner?: boolean };
@@ -104,7 +104,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     // Ellenőrzés: owner-e a bejelentkezett moderátor
-    const rawSession = typeof window !== "undefined" ? window.localStorage.getItem("moderator-session") : null;
+    const rawSession = typeof window !== "undefined" ? window.sessionStorage.getItem("moderator-session") : null;
     if (rawSession) {
       try {
         const parsed = JSON.parse(rawSession) as { name?: string; isOwner?: boolean };

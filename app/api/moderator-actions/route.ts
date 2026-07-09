@@ -9,6 +9,7 @@ type ModeratorActionEntry = {
   text: string;
   createdAt: string;
   isError?: boolean;
+  kind?: string;
 };
 
 function isEntry(value: unknown): value is ModeratorActionEntry {
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
     text: body.text,
     createdAt: body.createdAt,
     ...(body.isError === true ? { isError: true } : {}),
+    ...(typeof body.kind === "string" ? { kind: body.kind } : {}),
   };
   const existing = await readSharedArray<ModeratorActionEntry>(FILE, isEntry);
   const next = [...existing, entry].slice(-MAX_ENTRIES);

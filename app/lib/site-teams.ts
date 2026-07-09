@@ -25,6 +25,8 @@ export const SITE_TEAMS_STORAGE_KEY = "site-teams";
 export const SITE_TEAMS_CHANGED_EVENT = "site-teams-changed";
 export const TEAM_INVITES_STORAGE_KEY = "team-invites";
 export const TEAM_INVITES_CHANGED_EVENT = "team-invites-changed";
+const SITE_TEAMS_API_ENDPOINT = "/api/site-teams";
+const TEAM_INVITES_API_ENDPOINT = "/api/team-invites";
 
 function parseJsonArray<T>(raw: string | null): T[] {
   if (!raw) {
@@ -79,6 +81,7 @@ export function writeSiteTeamsToStorage(teams: SiteTeam[]) {
   }
   window.localStorage.setItem(SITE_TEAMS_STORAGE_KEY, JSON.stringify(teams));
   window.dispatchEvent(new Event(SITE_TEAMS_CHANGED_EVENT));
+  void pushSiteTeamsToServer(teams);
 }
 
 export function readTeamInvitesFromStorage(): TeamInvite[] {
@@ -104,6 +107,55 @@ export function writeTeamInvitesToStorage(invites: TeamInvite[]) {
   }
   window.localStorage.setItem(TEAM_INVITES_STORAGE_KEY, JSON.stringify(invites));
   window.dispatchEvent(new Event(TEAM_INVITES_CHANGED_EVENT));
+  void pushTeamInvitesToServer(invites);
+}
+
+export async function pushSiteTeamsToServer(teams: SiteTeam[]) {
+  await fetch(SITE_TEAMS_API_ENDPOINT, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ data: teams }),
+  });
+}
+
+export async function pushTeamInvitesToServer(invites: TeamInvite[]) {
+  await fetch(TEAM_INVITES_API_ENDPOINT, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ data: invites }),
+  });
+}
+
+export async function syncSiteTeamsFromServer() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  const response = await fetch(SITE_TEAMS_API_ENDPOINT, { cache: "no-store" });
+  const payload = (await response.json()) as { ok?: boolean; data?: SiteTeam[] };
+  if (!response.ok || !payload.ok || !Array.isArray(payload.data)) {
+    throw new Error("Nem sikerült szinkronizálni a csapatokat.");
+  }
+  window.localStorage.setItem(SITE_TEAMS_STORAGE_KEY, JSON.stringify(payload.data));
+  window.dispatchEvent(new Event(SITE_TEAMS_CHANGED_EVENT));
+  return payload.data;
+}
+
+export async function syncTeamInvitesFromServer() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  const response = await fetch(TEAM_INVITES_API_ENDPOINT, { cache: "no-store" });
+  const payload = (await response.json()) as { ok?: boolean; data?: TeamInvite[] };
+  if (!response.ok || !payload.ok || !Array.isArray(payload.data)) {
+    throw new Error("Nem sikerült szinkronizálni a meghívókat.");
+  }
+  window.localStorage.setItem(TEAM_INVITES_STORAGE_KEY, JSON.stringify(payload.data));
+  window.dispatchEvent(new Event(TEAM_INVITES_CHANGED_EVENT));
+  return payload.data;
 }
 
 export function findTeamByMemberId(teams: SiteTeam[], userId: string): SiteTeam | null {

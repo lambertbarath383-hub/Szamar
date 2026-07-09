@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   CUSTOM_BRACKETS_CHANGED_EVENT,
   readCustomBracketsFromStorage,
+  syncCustomBracketsFromServer,
   type CustomBracketEntry,
 } from "@/app/lib/custom-brackets";
 
@@ -11,17 +12,27 @@ export default function BracketsPage() {
   const [customBrackets, setCustomBrackets] = useState<CustomBracketEntry[]>([]);
 
   useEffect(() => {
-    const loadBrackets = () => {
+    const loadBrackets = async () => {
+      try {
+        await syncCustomBracketsFromServer();
+      } catch {}
       setCustomBrackets(readCustomBracketsFromStorage());
     };
 
-    const timeoutId = setTimeout(loadBrackets, 0);
-    window.addEventListener(CUSTOM_BRACKETS_CHANGED_EVENT, loadBrackets);
-    window.addEventListener("storage", loadBrackets);
+    const timeoutId = setTimeout(() => {
+      loadBrackets().catch(() => {});
+    }, 0);
+    const intervalId = setInterval(() => {
+      loadBrackets().catch(() => {});
+    }, 15000);
+    const onLoadBrackets = () => {
+      loadBrackets().catch(() => {});
+    };
+    window.addEventListener(CUSTOM_BRACKETS_CHANGED_EVENT, onLoadBrackets);
     return () => {
       clearTimeout(timeoutId);
-      window.removeEventListener(CUSTOM_BRACKETS_CHANGED_EVENT, loadBrackets);
-      window.removeEventListener("storage", loadBrackets);
+      clearInterval(intervalId);
+      window.removeEventListener(CUSTOM_BRACKETS_CHANGED_EVENT, onLoadBrackets);
     };
   }, []);
 

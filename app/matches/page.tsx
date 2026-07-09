@@ -4,10 +4,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { matches } from '@/app/data/matches';
 import type { Match, PlayerMatchStats } from '@/app/data/matches';
 import {
-  CUSTOM_MATCHES_STORAGE_KEY,
   CUSTOM_MATCHES_CHANGED_EVENT,
   customMatchEntryToMatch,
   readCustomMatchEntriesFromStorage,
+  syncCustomMatchEntriesFromServer,
 } from '@/app/lib/custom-matches';
 
 export default function MatchesPage() {
@@ -16,26 +16,30 @@ export default function MatchesPage() {
   const matchesData = useMemo(() => [...customMatches, ...matches], [customMatches]);
 
   useEffect(() => {
-    const loadCustomMatches = () => {
+    const loadCustomMatches = async () => {
+      try {
+        await syncCustomMatchEntriesFromServer();
+      } catch {}
       const entries = readCustomMatchEntriesFromStorage();
       setCustomMatches(entries.map(customMatchEntryToMatch));
     };
 
-    const timeoutId = setTimeout(loadCustomMatches, 0);
-    const onCustomMatchesChanged = () => loadCustomMatches();
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === CUSTOM_MATCHES_STORAGE_KEY) {
-        loadCustomMatches();
-      }
+    const timeoutId = setTimeout(() => {
+      loadCustomMatches().catch(() => {});
+    }, 0);
+    const intervalId = setInterval(() => {
+      loadCustomMatches().catch(() => {});
+    }, 15000);
+    const onCustomMatchesChanged = () => {
+      loadCustomMatches().catch(() => {});
     };
 
     window.addEventListener(CUSTOM_MATCHES_CHANGED_EVENT, onCustomMatchesChanged);
-    window.addEventListener("storage", onStorage);
 
     return () => {
       clearTimeout(timeoutId);
+      clearInterval(intervalId);
       window.removeEventListener(CUSTOM_MATCHES_CHANGED_EVENT, onCustomMatchesChanged);
-      window.removeEventListener("storage", onStorage);
     };
   }, []);
 

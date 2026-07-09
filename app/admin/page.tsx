@@ -4,12 +4,14 @@ import { type ChangeEvent, useEffect, useState } from "react";
 import {
   normalizeHttpUrl,
   readCustomMatchEntriesFromStorage,
+  syncCustomMatchEntriesFromServer,
   writeCustomMatchEntriesToStorage,
   type CustomMatchEntry,
 } from "@/app/lib/custom-matches";
 import {
   normalizeBracketInput,
   readCustomBracketsFromStorage,
+  syncCustomBracketsFromServer,
   writeCustomBracketsToStorage,
   type CustomBracketEntry,
 } from "@/app/lib/custom-brackets";
@@ -20,6 +22,8 @@ import { deleteSiteUser, fetchSiteUsers, patchSiteUser, type PublicSiteUser } fr
 import {
   readSiteTeamsFromStorage,
   readTeamInvitesFromStorage,
+  syncSiteTeamsFromServer,
+  syncTeamInvitesFromServer,
   writeSiteTeamsToStorage,
   writeTeamInvitesToStorage,
   type SiteTeam,
@@ -80,17 +84,35 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
+    const loadAdminState = async () => {
       setAdminKey(window.localStorage.getItem("admin-key") ?? "");
+      try {
+        await Promise.all([
+          syncCustomMatchEntriesFromServer(),
+          syncCustomBracketsFromServer(),
+          syncSiteTeamsFromServer(),
+          syncTeamInvitesFromServer(),
+        ]);
+      } catch {}
       setCustomMatches(readCustomMatchEntriesFromStorage());
       setCustomBrackets(readCustomBracketsFromStorage());
       loadSiteUsers().catch(() => setSiteUsers([]));
       setSiteTeams(readSiteTeamsFromStorage());
       setTeamInvites(readTeamInvitesFromStorage());
       loadEloRequests().catch(() => setEloRequests([]));
-    }, 0);
+    };
 
-    return () => clearTimeout(timeoutId);
+    const timeoutId = setTimeout(() => {
+      loadAdminState().catch(() => {});
+    }, 0);
+    const intervalId = setInterval(() => {
+      loadAdminState().catch(() => {});
+    }, 15000);
+
+    return () => {
+      clearTimeout(timeoutId);
+      clearInterval(intervalId);
+    };
   }, []);
 
   const verifyModeratorKey = async (key: string): Promise<string | null> => {

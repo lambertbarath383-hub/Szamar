@@ -6,6 +6,8 @@ import {
   findTeamByMemberId,
   readSiteTeamsFromStorage,
   readTeamInvitesFromStorage,
+  syncSiteTeamsFromServer,
+  syncTeamInvitesFromServer,
   writeSiteTeamsToStorage,
   writeTeamInvitesToStorage,
   type SiteTeam,
@@ -52,6 +54,9 @@ export default function TeamInviteNotifications() {
       } catch {
         setUsers([]);
       }
+      try {
+        await Promise.all([syncSiteTeamsFromServer(), syncTeamInvitesFromServer()]);
+      } catch {}
       setTeams(readSiteTeamsFromStorage());
       setInvites(readTeamInvitesFromStorage());
     };
@@ -61,18 +66,18 @@ export default function TeamInviteNotifications() {
     };
 
     onUpdateState();
+    const intervalId = setInterval(onUpdateState, 15000);
     window.addEventListener("site-user-session-changed", onUpdateState);
     window.addEventListener("site-users-changed", onUpdateState);
     window.addEventListener(SITE_TEAMS_CHANGED_EVENT, onUpdateState);
     window.addEventListener(TEAM_INVITES_CHANGED_EVENT, onUpdateState);
-    window.addEventListener("storage", onUpdateState);
 
     return () => {
+      clearInterval(intervalId);
       window.removeEventListener("site-user-session-changed", onUpdateState);
       window.removeEventListener("site-users-changed", onUpdateState);
       window.removeEventListener(SITE_TEAMS_CHANGED_EVENT, onUpdateState);
       window.removeEventListener(TEAM_INVITES_CHANGED_EVENT, onUpdateState);
-      window.removeEventListener("storage", onUpdateState);
     };
   }, []);
 

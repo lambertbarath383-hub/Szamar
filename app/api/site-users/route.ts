@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { type SiteUser } from "@/app/lib/site-users";
 import { readSiteUsersFromFile, sanitizeSiteUser, writeSiteUsersToFile } from "@/app/lib/server/site-users-store";
+import { logAction } from "@/app/lib/server/log-action";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
 
     const nextUsers = [...users, nextUser];
     await writeSiteUsersToFile(nextUsers);
+    await logAction(`🆕 Új játékos regisztrált: ${nextUser.name}`);
     return NextResponse.json({ ok: true, user: sanitizeSiteUser(nextUser) });
   }
 

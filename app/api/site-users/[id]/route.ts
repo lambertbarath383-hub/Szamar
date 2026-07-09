@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readSiteUsersFromFile, sanitizeSiteUser, writeSiteUsersToFile } from "@/app/lib/server/site-users-store";
+import { logAction } from "@/app/lib/server/log-action";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -31,16 +32,28 @@ export async function PATCH(request: Request, context: RouteContext) {
   const nextUsers = [...users];
   nextUsers[index] = updated;
   await writeSiteUsersToFile(nextUsers);
+
+  const by = typeof body._by === "string" ? body._by : null;
+  if (by) {
+    await logAction(`✏️ ${by} (moderátor) szerkesztette: ${current.name}`);
+  }
+
   return NextResponse.json({ ok: true, user: sanitizeSiteUser(updated) });
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(request: Request, context: RouteContext) {
   const { id } = await context.params;
+  const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const users = await readSiteUsersFromFile();
-  if (!users.some((item) => item.id === id)) {
+  const target = users.find((item) => item.id === id);
+  if (!target) {
     return NextResponse.json({ ok: false, message: "Felhasználó nem található." }, { status: 404 });
   }
   const nextUsers = users.filter((item) => item.id !== id);
   await writeSiteUsersToFile(nextUsers);
+
+  const by = typeof body._by === "string" ? body._by : "Moderátor";
+  await logAction(`🗑️ ${by} törölte a játékost: ${target.name}`);
+
   return NextResponse.json({ ok: true });
 }

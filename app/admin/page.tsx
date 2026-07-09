@@ -89,6 +89,19 @@ export default function AdminPage() {
     return requests;
   };
 
+  const getModeratorName = (): string => {
+    if (typeof window === "undefined") return "Moderátor";
+    const raw = window.localStorage.getItem("moderator-session");
+    if (!raw) return "Moderátor";
+    try {
+      const parsed = JSON.parse(raw) as { name?: string; isOwner?: boolean };
+      if (parsed.isOwner) return "Tulajdonos";
+      return parsed.name?.trim() || "Moderátor";
+    } catch {
+      return "Moderátor";
+    }
+  };
+
   useEffect(() => {
     // Ellenőrzés: owner-e a bejelentkezett moderátor
     const rawSession = typeof window !== "undefined" ? window.localStorage.getItem("moderator-session") : null;
@@ -457,7 +470,7 @@ export default function AdminPage() {
         return;
       }
 
-      await deleteSiteUser(userId);
+      await deleteSiteUser(userId, getModeratorName());
       await loadSiteUsers();
       window.dispatchEvent(new Event("site-users-changed"));
       setMessage("Felhasználó törölve.");
@@ -499,7 +512,7 @@ export default function AdminPage() {
 
       await patchSiteUser(editingUserId, {
         faceitElo: parsed,
-      });
+      }, getModeratorName());
       await loadSiteUsers();
       window.dispatchEvent(new Event("site-users-changed"));
       cancelEditUserElo();
@@ -529,11 +542,11 @@ export default function AdminPage() {
       const existingUsers = await fetchSiteUsers();
       await patchSiteUser(target.userId, {
         faceitElo: target.requestedElo,
-      });
+      }, getModeratorName());
       await patchEloRequest(requestId, {
         status: "approved",
         resolvedAt: new Date().toISOString(),
-        reviewedBy: "moderator",
+        reviewedBy: getModeratorName(),
       });
       await loadSiteUsers();
       const nextRequests = await loadEloRequests();
@@ -541,9 +554,6 @@ export default function AdminPage() {
       window.dispatchEvent(new Event(ELO_REQUESTS_CHANGED_EVENT));
       setEloRequests(nextRequests);
       setMessage("Kérelem elfogadva, ELO frissítve.");
-      publishModeratorAction(
-        `elfogadta ${existingUsers.find((item) => item.id === target.userId)?.name ?? "egy játékos"} ELO kérelmét: ${target.requestedElo}.`
-      );
     } catch {
       setMessage("Hálózati hiba történt.");
     } finally {
@@ -569,15 +579,12 @@ export default function AdminPage() {
       await patchEloRequest(requestId, {
         status: "rejected",
         resolvedAt: new Date().toISOString(),
-        reviewedBy: "moderator",
+        reviewedBy: getModeratorName(),
       });
       const nextRequests = await loadEloRequests();
       window.dispatchEvent(new Event(ELO_REQUESTS_CHANGED_EVENT));
       setEloRequests(nextRequests);
       setMessage("Kérelem elutasítva.");
-      publishModeratorAction(
-        `elutasította ${(await fetchSiteUsers()).find((item) => item.id === target.userId)?.name ?? "egy játékos"} ELO kérelmét.`
-      );
     } catch {
       setMessage("Hálózati hiba történt.");
     } finally {

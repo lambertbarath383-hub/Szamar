@@ -18,11 +18,12 @@ export async function fetchSiteUsers(options?: { light?: boolean }): Promise<Pub
   return payload.data;
 }
 
-export async function patchSiteUser(id: string, updates: Partial<SiteUser>): Promise<PublicSiteUser> {
+export async function patchSiteUser(id: string, updates: Partial<SiteUser>, by?: string): Promise<PublicSiteUser> {
+  const body = by ? { ...updates, _by: by } : updates;
   const response = await fetch(`/api/site-users/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(updates),
+    body: JSON.stringify(body),
   });
   const payload = (await response.json()) as { ok?: boolean; user?: PublicSiteUser; message?: string };
   if (!response.ok || !payload.ok || !payload.user) {
@@ -31,8 +32,12 @@ export async function patchSiteUser(id: string, updates: Partial<SiteUser>): Pro
   return payload.user;
 }
 
-export async function deleteSiteUser(id: string) {
-  const response = await fetch(`/api/site-users/${id}`, { method: "DELETE" });
+export async function deleteSiteUser(id: string, by?: string) {
+  const response = await fetch(`/api/site-users/${id}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(by ? { _by: by } : {}),
+  });
   const payload = (await response.json()) as { ok?: boolean; message?: string };
   if (!response.ok || !payload.ok) {
     throw new Error(payload.message ?? "Nem sikerült törölni a felhasználót.");

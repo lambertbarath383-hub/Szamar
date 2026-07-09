@@ -17,17 +17,15 @@ export async function PATCH(request: Request, context: RouteContext) {
   const current = users[index];
   const updated = {
     ...current,
-    ...(typeof body.name === "string" ? { name: body.name } : {}),
-    ...(typeof body.password === "string" ? { password: body.password } : {}),
-    ...(typeof body.faceitProfileUrl === "string" ? { faceitProfileUrl: body.faceitProfileUrl } : {}),
-    ...(typeof body.faceitNickname === "string" ? { faceitNickname: body.faceitNickname } : {}),
-    ...(typeof body.faceitElo === "number" || body.faceitElo === null ? { faceitElo: body.faceitElo } : {}),
-    ...(typeof body.faceitLevel === "number" || body.faceitLevel === null ? { faceitLevel: body.faceitLevel } : {}),
-    ...(typeof body.country === "string" || typeof body.country === "undefined" ? { country: body.country } : {}),
-    ...(typeof body.manualCountryCode === "string" || typeof body.manualCountryCode === "undefined"
-      ? { manualCountryCode: body.manualCountryCode }
-      : {}),
-    ...(typeof body.avatar === "string" || typeof body.avatar === "undefined" ? { avatar: body.avatar } : {}),
+    ...("name" in body && typeof body.name === "string" ? { name: body.name } : {}),
+    ...("password" in body && typeof body.password === "string" ? { password: body.password } : {}),
+    ...("faceitProfileUrl" in body && typeof body.faceitProfileUrl === "string" ? { faceitProfileUrl: body.faceitProfileUrl } : {}),
+    ...("faceitNickname" in body && typeof body.faceitNickname === "string" ? { faceitNickname: body.faceitNickname } : {}),
+    ...("faceitElo" in body ? { faceitElo: typeof body.faceitElo === "number" ? body.faceitElo : null } : {}),
+    ...("faceitLevel" in body ? { faceitLevel: typeof body.faceitLevel === "number" ? body.faceitLevel : null } : {}),
+    ...("country" in body ? { country: typeof body.country === "string" ? body.country : undefined } : {}),
+    ...("manualCountryCode" in body ? { manualCountryCode: typeof body.manualCountryCode === "string" ? body.manualCountryCode : undefined } : {}),
+    ...("avatar" in body ? { avatar: typeof body.avatar === "string" ? body.avatar : undefined } : {}),
   };
 
   const nextUsers = [...users];

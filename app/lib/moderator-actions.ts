@@ -35,6 +35,14 @@ export function publishModeratorAction(actionText: string) {
     text: `${moderatorName} web moderator\n${actionText}`,
     createdAt: new Date().toISOString(),
   };
+  // Szerverre mentés (minden felhasználó láthassa)
+  fetch("/api/moderator-actions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).catch(() => {});
+  // Lokális esemény ugyanabban a böngészőben
   window.localStorage.setItem(MODERATOR_ACTION_STORAGE_KEY, JSON.stringify(payload));
   window.dispatchEvent(new CustomEvent<ModeratorActionPayload>(MODERATOR_ACTION_EVENT, { detail: payload }));
 }
+

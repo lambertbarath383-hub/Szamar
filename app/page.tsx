@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function Home() {
   return (
     <main className="container">
-      <h1 className="title">CS2 HUB</h1>
+      <h1 className="title">Hungarian Major</h1>
 
       <div className="grid">
         <Link href="/players" className="panel">

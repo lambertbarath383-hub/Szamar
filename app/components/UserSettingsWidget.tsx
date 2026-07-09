@@ -200,8 +200,8 @@ export default function UserSettingsWidget() {
     try {
       await patchSiteUser(session.id, {
         name: nextName,
-        manualCountryCode: countryCode || undefined,
-        avatar: avatar || undefined,
+        manualCountryCode: countryCode,
+        avatar: avatar,
       });
     } catch {
       setMessage("Nem sikerült menteni a beállításokat.");

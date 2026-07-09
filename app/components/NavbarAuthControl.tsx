@@ -110,11 +110,32 @@ export default function NavbarAuthControl() {
     window.addEventListener("site-user-session-changed", updateSessions);
     window.addEventListener("storage", onStorage);
 
+    // Szerveres moderátor action polling (minden más böngésző is lássa)
+    let lastSeenAt = new Date().toISOString();
+    const pollModeratorActions = async () => {
+      try {
+        const response = await fetch(`/api/moderator-actions?since=${encodeURIComponent(lastSeenAt)}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { ok?: boolean; data?: ModeratorActionPayload[] };
+        if (!payload.ok || !Array.isArray(payload.data)) return;
+        for (const entry of payload.data) {
+          if (entry?.text) {
+            showNotification(entry.text);
+          }
+        }
+        if (payload.data.length > 0) {
+          lastSeenAt = payload.data[payload.data.length - 1].createdAt;
+        }
+      } catch {}
+    };
+    const intervalId = setInterval(() => { pollModeratorActions().catch(() => {}); }, 10000);
+
     return () => {
       window.removeEventListener("moderator-session-changed", onSessionChanged);
       window.removeEventListener(MODERATOR_ACTION_EVENT, onModeratorAction);
       window.removeEventListener("site-user-session-changed", updateSessions);
       window.removeEventListener("storage", onStorage);
+      clearInterval(intervalId);
     };
   }, []);
 

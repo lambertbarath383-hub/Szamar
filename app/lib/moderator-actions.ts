@@ -13,7 +13,7 @@ function resolveModeratorName() {
   if (typeof window === "undefined") {
     return "Moderátor";
   }
-  const raw = window.localStorage.getItem("moderator-session");
+  const raw = window.sessionStorage.getItem("moderator-session");
   if (!raw) {
     return "Moderátor";
   }
@@ -45,4 +45,3 @@ export function publishModeratorAction(actionText: string) {
   window.localStorage.setItem(MODERATOR_ACTION_STORAGE_KEY, JSON.stringify(payload));
   window.dispatchEvent(new CustomEvent<ModeratorActionPayload>(MODERATOR_ACTION_EVENT, { detail: payload }));
 }
-

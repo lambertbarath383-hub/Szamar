@@ -52,7 +52,7 @@ export default function ModeratorLogin() {
       };
       setSession(nextSession);
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("moderator-session", JSON.stringify(nextSession));
+        window.sessionStorage.setItem("moderator-session", JSON.stringify(nextSession));
         window.dispatchEvent(new Event("moderator-session-changed"));
       }
       setPassword("");
@@ -72,7 +72,7 @@ export default function ModeratorLogin() {
     setNotification(null);
     setNotificationLeaving(false);
     if (typeof window !== "undefined") {
-      window.localStorage.removeItem("moderator-session");
+      window.sessionStorage.removeItem("moderator-session");
       window.dispatchEvent(new Event("moderator-session-changed"));
     }
     showNotification(`A moderátor kijelentkezett: ${currentModeratorName}`);
@@ -80,7 +80,7 @@ export default function ModeratorLogin() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      const raw = window.localStorage.getItem("moderator-session");
+      const raw = window.sessionStorage.getItem("moderator-session");
       if (!raw) {
         return;
       }
@@ -88,7 +88,7 @@ export default function ModeratorLogin() {
         const parsed = JSON.parse(raw) as ModeratorSession;
         setSession(parsed && parsed.name ? parsed : null);
       } catch {
-        window.localStorage.removeItem("moderator-session");
+        window.sessionStorage.removeItem("moderator-session");
         setSession(null);
       }
     }, 0);

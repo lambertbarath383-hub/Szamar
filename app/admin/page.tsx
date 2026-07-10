@@ -35,6 +35,7 @@ import {
 } from "@/app/lib/elo-requests";
 import { fetchEloRequests, patchEloRequest } from "@/app/lib/elo-requests-api";
 import { publishModeratorAction } from "@/app/lib/moderator-actions";
+import { APP_MINUTE_REFRESH_EVENT } from "@/app/lib/refresh-cycle";
 
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState("");
@@ -161,13 +162,14 @@ export default function AdminPage() {
     const timeoutId = setTimeout(() => {
       loadAdminState().catch(() => {});
     }, 0);
-    const intervalId = setInterval(() => {
+    const onMinuteRefresh = () => {
       loadAdminState().catch(() => {});
-    }, 60000);
+    };
+    window.addEventListener(APP_MINUTE_REFRESH_EVENT, onMinuteRefresh);
 
     return () => {
       clearTimeout(timeoutId);
-      clearInterval(intervalId);
+      window.removeEventListener(APP_MINUTE_REFRESH_EVENT, onMinuteRefresh);
     };
   }, []);
 

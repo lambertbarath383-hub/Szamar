@@ -7,6 +7,7 @@ import {
   MODERATOR_ACTION_STORAGE_KEY,
   type ModeratorActionPayload,
 } from "@/app/lib/moderator-actions";
+import { APP_MINUTE_REFRESH_EVENT } from "@/app/lib/refresh-cycle";
 
 type ModeratorSession = {
   name: string;
@@ -133,14 +134,17 @@ export default function NavbarAuthControl() {
         }
       } catch {}
     };
-    const intervalId = setInterval(() => { pollModeratorActions().catch(() => {}); }, 30000);
+    const onMinuteRefresh = () => {
+      pollModeratorActions().catch(() => {});
+    };
+    window.addEventListener(APP_MINUTE_REFRESH_EVENT, onMinuteRefresh);
 
     return () => {
       window.removeEventListener("moderator-session-changed", onSessionChanged);
       window.removeEventListener(MODERATOR_ACTION_EVENT, onModeratorAction);
       window.removeEventListener("site-user-session-changed", updateSessions);
       window.removeEventListener("storage", onStorage);
-      clearInterval(intervalId);
+      window.removeEventListener(APP_MINUTE_REFRESH_EVENT, onMinuteRefresh);
     };
   }, []);
 

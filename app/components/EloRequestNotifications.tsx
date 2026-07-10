@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ELO_REQUESTS_CHANGED_EVENT, type EloChangeRequest } from "@/app/lib/elo-requests";
 import { fetchEloRequests, patchEloRequest } from "@/app/lib/elo-requests-api";
+import { APP_MINUTE_REFRESH_EVENT } from "@/app/lib/refresh-cycle";
 
 type SiteUserSession = {
   id: string;
@@ -40,13 +41,13 @@ export default function EloRequestNotifications() {
     };
 
     onUpdateState();
-    const intervalId = setInterval(onUpdateState, 60000);
     window.addEventListener("site-user-session-changed", onUpdateState);
     window.addEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdateState);
+    window.addEventListener(APP_MINUTE_REFRESH_EVENT, onUpdateState);
     return () => {
-      clearInterval(intervalId);
       window.removeEventListener("site-user-session-changed", onUpdateState);
       window.removeEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdateState);
+      window.removeEventListener(APP_MINUTE_REFRESH_EVENT, onUpdateState);
     };
   }, []);
 

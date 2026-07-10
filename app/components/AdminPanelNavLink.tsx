@@ -11,7 +11,7 @@ export default function AdminPanelNavLink() {
       if (typeof window === "undefined") {
         return;
       }
-      const raw = window.localStorage.getItem("moderator-session");
+      const raw = window.sessionStorage.getItem("moderator-session");
       setIsModerator(Boolean(raw));
     };
 

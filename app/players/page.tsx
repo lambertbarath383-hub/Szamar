@@ -5,6 +5,7 @@ import { players, type Player } from "../data/players";
 import { type FaceitOverride } from "../lib/faceit-profile";
 import { SITE_USERS_CHANGED_EVENT, sortUsersByRank } from "../lib/site-users";
 import { fetchSiteUsers, patchSiteUser, type PublicSiteUser } from "../lib/site-users-api";
+import { APP_MINUTE_REFRESH_EVENT } from "../lib/refresh-cycle";
 
 type SelectedPlayer = Player | null;
 type PlayersApiResponse = {
@@ -27,6 +28,9 @@ type FaceitSummaryResponse = {
   country?: string | null;
   avatar?: string | null;
 };
+
+const FACEIT_USERS_MIN_SYNC_GAP_MS = 15 * 60 * 1000;
+const FACEIT_USERS_LAST_SYNC_KEY = "players-faceit-users-last-sync";
 
 function formatStat(value: number | null | undefined, suffix = "") {
   if (value === null || value === undefined) {
@@ -205,13 +209,13 @@ export default function PlayersPage() {
     };
 
     runLoad();
-    const intervalId = setInterval(runLoad, 300000);
+    window.addEventListener(APP_MINUTE_REFRESH_EVENT, runLoad);
 
     return () => {
       isMounted = false;
-      clearInterval(intervalId);
+      window.removeEventListener(APP_MINUTE_REFRESH_EVENT, runLoad);
     };
-  }, [faceitOverrides, adminKey, matchesSourceUrl]);
+  }, [adminKey, faceitOverrides, matchesSourceUrl]);
 
   useEffect(() => {
     let isMounted = true;
@@ -222,6 +226,19 @@ export default function PlayersPage() {
         return;
       }
       setRegisteredPlayers(mapSiteUsersToPlayers(currentUsers));
+
+      const now = Date.now();
+      const lastSyncRaw = window.sessionStorage.getItem(FACEIT_USERS_LAST_SYNC_KEY);
+      const lastSync = lastSyncRaw ? Number.parseInt(lastSyncRaw, 10) : 0;
+      if (Number.isFinite(lastSync) && lastSync > 0 && now - lastSync < FACEIT_USERS_MIN_SYNC_GAP_MS) {
+        return;
+      }
+
+      const usersWithFaceit = currentUsers.filter((user) => Boolean(user.faceitNickname));
+      if (usersWithFaceit.length === 0) {
+        window.sessionStorage.setItem(FACEIT_USERS_LAST_SYNC_KEY, String(now));
+        return;
+      }
 
       const updatedUsers = await Promise.all(
         currentUsers.map(async (user) => {
@@ -278,6 +295,7 @@ export default function PlayersPage() {
         );
         window.dispatchEvent(new Event("site-users-changed"));
       }
+      window.sessionStorage.setItem(FACEIT_USERS_LAST_SYNC_KEY, String(now));
       setRegisteredPlayers(mapSiteUsersToPlayers(updatedUsers));
     };
 
@@ -289,15 +307,15 @@ export default function PlayersPage() {
     };
 
     refreshUsersFromFaceit();
-    const intervalId = setInterval(refreshUsersFromFaceit, 300000);
     window.addEventListener(SITE_USERS_CHANGED_EVENT, handleUsersChanged);
     window.addEventListener("site-user-session-changed", handleUsersChanged);
+    window.addEventListener(APP_MINUTE_REFRESH_EVENT, refreshUsersFromFaceit);
 
     return () => {
       isMounted = false;
-      clearInterval(intervalId);
       window.removeEventListener(SITE_USERS_CHANGED_EVENT, handleUsersChanged);
       window.removeEventListener("site-user-session-changed", handleUsersChanged);
+      window.removeEventListener(APP_MINUTE_REFRESH_EVENT, refreshUsersFromFaceit);
     };
   }, []);
 

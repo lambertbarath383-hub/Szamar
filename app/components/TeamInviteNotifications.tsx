@@ -15,6 +15,7 @@ import {
   SITE_TEAMS_CHANGED_EVENT,
   TEAM_INVITES_CHANGED_EVENT,
 } from "@/app/lib/site-teams";
+import { APP_MINUTE_REFRESH_EVENT } from "@/app/lib/refresh-cycle";
 
 type SiteUserSession = {
   id: string;
@@ -66,18 +67,18 @@ export default function TeamInviteNotifications() {
     };
 
     onUpdateState();
-    const intervalId = setInterval(onUpdateState, 60000);
     window.addEventListener("site-user-session-changed", onUpdateState);
     window.addEventListener("site-users-changed", onUpdateState);
     window.addEventListener(SITE_TEAMS_CHANGED_EVENT, onUpdateState);
     window.addEventListener(TEAM_INVITES_CHANGED_EVENT, onUpdateState);
+    window.addEventListener(APP_MINUTE_REFRESH_EVENT, onUpdateState);
 
     return () => {
-      clearInterval(intervalId);
       window.removeEventListener("site-user-session-changed", onUpdateState);
       window.removeEventListener("site-users-changed", onUpdateState);
       window.removeEventListener(SITE_TEAMS_CHANGED_EVENT, onUpdateState);
       window.removeEventListener(TEAM_INVITES_CHANGED_EVENT, onUpdateState);
+      window.removeEventListener(APP_MINUTE_REFRESH_EVENT, onUpdateState);
     };
   }, []);
 

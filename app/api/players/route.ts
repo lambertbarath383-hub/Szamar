@@ -25,7 +25,25 @@ type PlayersPayload = {
   };
 };
 
+type PlayersPayloadCacheEntry = {
+  payload: PlayersPayload;
+  expiresAt: number;
+};
+
+const PLAYERS_PAYLOAD_CACHE_TTL_MS = 60_000;
+let playersPayloadCache: PlayersPayloadCacheEntry | null = null;
+
 export async function GET(request: Request) {
+  const requestUrl = new URL(request.url);
+  const hasOverrides = Boolean(requestUrl.searchParams.get("overrides"));
+  const hasMatchesSourceOverride = Boolean(requestUrl.searchParams.get("matchesSource"));
+  const hasAdminHeader = Boolean(request.headers.get("x-admin-key"));
+  const shouldUsePayloadCache = !hasOverrides && !hasMatchesSourceOverride && !hasAdminHeader;
+
+  if (shouldUsePayloadCache && playersPayloadCache && playersPayloadCache.expiresAt > Date.now()) {
+    return NextResponse.json(playersPayloadCache.payload);
+  }
+
   const sourceUrl = process.env.PLAYERS_SOURCE_URL;
   let basePlayers: Player[] = players;
   let source: "remote" | "fallback" = "fallback";
@@ -58,7 +76,7 @@ export async function GET(request: Request) {
     sourceError = "PLAYERS_SOURCE_URL nincs beállítva, fallback adat használva.";
   }
 
-  const overridesRaw = new URL(request.url).searchParams.get("overrides");
+  const overridesRaw = requestUrl.searchParams.get("overrides");
   if (overridesRaw) {
     const adminKey = process.env.APP_ADMIN_KEY;
     const providedKey = request.headers.get("x-admin-key") ?? "";
@@ -140,6 +158,13 @@ export async function GET(request: Request) {
     },
     ...(allErrors ? { error: allErrors } : {}),
   };
+
+  if (shouldUsePayloadCache) {
+    playersPayloadCache = {
+      payload,
+      expiresAt: Date.now() + PLAYERS_PAYLOAD_CACHE_TTL_MS,
+    };
+  }
 
   return NextResponse.json(payload);
 }

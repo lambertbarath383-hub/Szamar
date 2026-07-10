@@ -7,6 +7,7 @@ import {
   syncCustomBracketsFromServer,
   type CustomBracketEntry,
 } from "@/app/lib/custom-brackets";
+import { APP_MINUTE_REFRESH_EVENT } from "@/app/lib/refresh-cycle";
 
 export default function BracketsPage() {
   const [customBrackets, setCustomBrackets] = useState<CustomBracketEntry[]>([]);
@@ -22,17 +23,18 @@ export default function BracketsPage() {
     const timeoutId = setTimeout(() => {
       loadBrackets().catch(() => {});
     }, 0);
-    const intervalId = setInterval(() => {
-      loadBrackets().catch(() => {});
-    }, 60000);
     const onLoadBrackets = () => {
       loadBrackets().catch(() => {});
     };
+    const onMinuteRefresh = () => {
+      loadBrackets().catch(() => {});
+    };
     window.addEventListener(CUSTOM_BRACKETS_CHANGED_EVENT, onLoadBrackets);
+    window.addEventListener(APP_MINUTE_REFRESH_EVENT, onMinuteRefresh);
     return () => {
       clearTimeout(timeoutId);
-      clearInterval(intervalId);
       window.removeEventListener(CUSTOM_BRACKETS_CHANGED_EVENT, onLoadBrackets);
+      window.removeEventListener(APP_MINUTE_REFRESH_EVENT, onMinuteRefresh);
     };
   }, []);
 

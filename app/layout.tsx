@@ -1,8 +1,10 @@
 import "./globals.css";
 import Link from "next/link";
 import AdminPanelNavLink from "@/app/components/AdminPanelNavLink";
+import AutoPageRefresh from "@/app/components/AutoPageRefresh";
 import EloRequestNotifications from "@/app/components/EloRequestNotifications";
 import NavbarAuthControl from "@/app/components/NavbarAuthControl";
+import RefreshCountdown from "@/app/components/RefreshCountdown";
 import TeamInviteNotifications from "@/app/components/TeamInviteNotifications";
 import UserSettingsWidget from "@/app/components/UserSettingsWidget";
 
@@ -23,10 +25,12 @@ export default function RootLayout({
             <Link href="/brackets">BRACKETS</Link>
             <AdminPanelNavLink />
           </div>
+          <RefreshCountdown />
           <NavbarAuthControl />
         </nav>
 
         {children}
+        <AutoPageRefresh />
         <TeamInviteNotifications />
         <EloRequestNotifications />
         <UserSettingsWidget />

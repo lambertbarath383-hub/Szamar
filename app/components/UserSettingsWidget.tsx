@@ -4,6 +4,7 @@ import { type ChangeEvent, useEffect, useState } from "react";
 import { fetchSiteUsers, patchSiteUser } from "@/app/lib/site-users-api";
 import { ELO_REQUESTS_CHANGED_EVENT, type EloChangeRequest } from "@/app/lib/elo-requests";
 import { createEloRequest, fetchEloRequests } from "@/app/lib/elo-requests-api";
+import { APP_MINUTE_REFRESH_EVENT } from "@/app/lib/refresh-cycle";
 
 type SiteUserSession = {
   id: string;
@@ -165,11 +166,11 @@ export default function UserSettingsWidget() {
       updatePending().catch(() => {});
     };
     onUpdatePending();
-    const intervalId = setInterval(onUpdatePending, 60000);
     window.addEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdatePending);
+    window.addEventListener(APP_MINUTE_REFRESH_EVENT, onUpdatePending);
     return () => {
-      clearInterval(intervalId);
       window.removeEventListener(ELO_REQUESTS_CHANGED_EVENT, onUpdatePending);
+      window.removeEventListener(APP_MINUTE_REFRESH_EVENT, onUpdatePending);
     };
   }, [session]);
 

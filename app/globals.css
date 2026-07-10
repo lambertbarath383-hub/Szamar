@@ -640,6 +640,18 @@ body {
   align-items: center;
 }
 
+.refresh-countdown {
+  color: #d6d6d6;
+  font-size: 0.86rem;
+  letter-spacing: 1px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  min-width: 110px;
+  text-align: center;
+}
+
 .navbar-auth-logged {
   display: inline-flex;
   align-items: center;

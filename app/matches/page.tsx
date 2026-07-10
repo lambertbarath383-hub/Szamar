@@ -9,6 +9,7 @@ import {
   readCustomMatchEntriesFromStorage,
   syncCustomMatchEntriesFromServer,
 } from '@/app/lib/custom-matches';
+import { APP_MINUTE_REFRESH_EVENT } from "@/app/lib/refresh-cycle";
 
 export default function MatchesPage() {
   const [customMatches, setCustomMatches] = useState<Match[]>([]);
@@ -27,18 +28,19 @@ export default function MatchesPage() {
     const timeoutId = setTimeout(() => {
       loadCustomMatches().catch(() => {});
     }, 0);
-    const intervalId = setInterval(() => {
-      loadCustomMatches().catch(() => {});
-    }, 60000);
     const onCustomMatchesChanged = () => {
       loadCustomMatches().catch(() => {});
     };
+    const onMinuteRefresh = () => {
+      loadCustomMatches().catch(() => {});
+    };
     window.addEventListener(CUSTOM_MATCHES_CHANGED_EVENT, onCustomMatchesChanged);
+    window.addEventListener(APP_MINUTE_REFRESH_EVENT, onMinuteRefresh);
 
     return () => {
       clearTimeout(timeoutId);
-      clearInterval(intervalId);
       window.removeEventListener(CUSTOM_MATCHES_CHANGED_EVENT, onCustomMatchesChanged);
+      window.removeEventListener(APP_MINUTE_REFRESH_EVENT, onMinuteRefresh);
     };
   }, []);
 

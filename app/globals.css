@@ -641,15 +641,21 @@ body {
 }
 
 .refresh-countdown {
-  color: #d6d6d6;
-  font-size: 0.86rem;
+  position: fixed;
+  top: 86px;
+  right: 14px;
+  z-index: 1200;
+  color: #f2f2f2;
+  font-size: 0.82rem;
   letter-spacing: 1px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 9999px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.03);
-  min-width: 110px;
+  padding: 7px 12px;
+  background: rgba(6, 11, 22, 0.9);
+  min-width: 118px;
   text-align: center;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
 }
 
 .navbar-auth-logged {
